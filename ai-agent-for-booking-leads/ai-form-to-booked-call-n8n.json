@@ -1,0 +1,775 @@
+{
+  "name": "AI Form \u2192 Booked Call Agent (AutomateWithAli)",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Book a call with us",
+        "formDescription": "Answer 4 quick questions \u2014 if we're a fit, you'll get a confirmed slot in minutes.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Your name",
+              "fieldType": "text",
+              "required": true
+            },
+            {
+              "fieldLabel": "Email",
+              "fieldType": "email",
+              "required": true
+            },
+            {
+              "fieldLabel": "What do you need help with?",
+              "fieldType": "textarea",
+              "required": true
+            },
+            {
+              "fieldLabel": "Budget range",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Under $500"
+                  },
+                  {
+                    "option": "$500 - $2,000"
+                  },
+                  {
+                    "option": "$2,000 - $10,000"
+                  },
+                  {
+                    "option": "$10,000+"
+                  }
+                ]
+              },
+              "required": true
+            },
+            {
+              "fieldLabel": "How soon do you want to start?",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "This week"
+                  },
+                  {
+                    "option": "This month"
+                  },
+                  {
+                    "option": "Just exploring"
+                  }
+                ]
+              },
+              "required": true
+            }
+          ]
+        },
+        "options": {
+          "responseText": "Got it \u2014 check your inbox. If you're a fit, your call is already booked. \u26a1"
+        }
+      },
+      "id": "e533adc4-6870-4ea1-a145-a536996700cc",
+      "name": "New Lead Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        -1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "businessName",
+              "type": "string",
+              "value": "YOUR BUSINESS NAME"
+            },
+            {
+              "id": "a2",
+              "name": "ownerEmail",
+              "type": "string",
+              "value": "you@yourbusiness.com"
+            },
+            {
+              "id": "a3",
+              "name": "services",
+              "type": "string",
+              "value": "LIST YOUR SERVICES, e.g. AI chatbots, workflow automation, lead-gen agents, CRM integrations"
+            },
+            {
+              "id": "a4",
+              "name": "fitCriteria",
+              "type": "string",
+              "value": "GOOD FIT RULES, e.g. needs one of our services; budget $500+; wants to start within a month"
+            },
+            {
+              "id": "a5",
+              "name": "timezone",
+              "type": "string",
+              "value": "Asia/Karachi"
+            },
+            {
+              "id": "a6",
+              "name": "replyStyle",
+              "type": "string",
+              "value": "Warm, short, confident. No buzzwords. Sound like a helpful human, never like a bot."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d8f9560b-0eae-47b9-9353-cb937c6929c7",
+      "name": "Business Setup",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "messages": {
+          "messageValues": [
+            {
+              "type": "system",
+              "role": "system",
+              "message": "You are the lead-qualification brain for {{ $('Business Setup').item.json.businessName }}.\n\nWHAT WE SELL:\n{{ $('Business Setup').item.json.services }}\n\nWHO IS A GOOD FIT:\n{{ $('Business Setup').item.json.fitCriteria }}\n\nYOUR JOB, EVERY TIME, IN THIS ORDER:\n1. Read the form answers. Identify which of our services (if any) the lead actually needs. Never invent a need that is not written.\n2. Decide fit ONLY against the rules above. \"Under $500\" budgets or \"Just exploring\" timelines are NOT a fit unless the rules say otherwise.\n3. If the message is vague, empty, spam, or you genuinely cannot tell \u2014 do NOT guess. Output \"REVIEW\" so a human looks at it. A wrong booking is worse than a human check.\n4. Write a 1-2 sentence summary a business owner can skim in 5 seconds: what they want, budget, timeline, and the one thing worth saying on the call.\n\nOUTPUT CONTRACT \u2014 reply with ONLY this JSON object, nothing else, no markdown fences:\n{\n  \"fit\": \"GOOD\" | \"NOT_FIT\" | \"REVIEW\",\n  \"service\": \"the matching service from our list, or 'unclear'\",\n  \"summary\": \"the 1-2 sentence skim-ready summary\",\n  \"hook\": \"one short line for the confirmation email that reflects THEIR own words back\"\n}\n\nTONE REFERENCE FOR THE HOOK: {{ $('Business Setup').item.json.replyStyle }}"
+            },
+            {
+              "type": "user",
+              "role": "user",
+              "message": "New form submission:\n\nName: {{ $json['Your name'] }}\nEmail: {{ $json['Email'] }}\nNeeds: {{ $json['What do you need help with?'] }}\nBudget: {{ $json['Budget range'] }}\nTimeline: {{ $json['How soon do you want to start?'] }}\n\nReturn the JSON object only."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "780c089f-6315-4a37-b597-930cec03ac9c",
+      "name": "Qualify Lead (AI)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        -740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.2
+        }
+      },
+      "id": "044b1061-3418-411f-9ff1-45b653c742b9",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -740,
+        520
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "",
+          "name": "OpenAI account \u2014 connect yours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reads the AI's JSON no matter how it's wrapped. Failure -> REVIEW (never guess).\nconst form = $('New Lead Form').first().json;\nconst setup = $('Business Setup').first().json;\nlet verdict = { fit: \"REVIEW\", service: \"unclear\", summary: \"AI answer unreadable \u2014 check manually.\", hook: \"\" };\ntry {\n  let raw = ($json.text || $json.output || \"\").trim();\n  raw = raw.replace(/```json|```/g, \"\").trim();\n  const m = raw.match(/\\{[\\s\\S]*\\}/);\n  if (m) {\n    const p = JSON.parse(m[0]);\n    if ([\"GOOD\", \"NOT_FIT\", \"REVIEW\"].includes(p.fit)) verdict = p;\n  }\n} catch (e) { /* keep REVIEW default \u2014 a human checks, nobody gets lost */ }\nreturn [{ json: {\n  name: form['Your name'], email: form['Email'],\n  need: form['What do you need help with?'], budget: form['Budget range'],\n  timeline: form['How soon do you want to start?'],\n  fit: verdict.fit, service: verdict.service || \"unclear\",\n  summary: verdict.summary || \"\", hook: verdict.hook || \"\",\n  businessName: setup.businessName, ownerEmail: setup.ownerEmail,\n  timezone: setup.timezone, booked: false, slotLabel: \"\"\n} }];"
+      },
+      "id": "717a7cfd-f522-4eb7-993a-6ca9f84b67f6",
+      "name": "Parse AI Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.fit }}",
+              "rightValue": "GOOD",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a4bc3eac-9a9b-4bb8-a77e-a7479ec47d36",
+      "name": "Good Fit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "primary"
+        },
+        "returnAll": false,
+        "limit": 100,
+        "options": {
+          "timeMin": "={{ $now.toISO() }}",
+          "timeMax": "={{ $now.plus({ days: 6 }).toISO() }}",
+          "singleEvents": true,
+          "orderBy": "startTime"
+        }
+      },
+      "id": "fc34fcdc-784a-47c4-b4a5-144ef6181d36",
+      "name": "Fetch Calendar Window",
+      "type": "n8n-nodes-google.calendar",
+      "typeVersion": 1.2,
+      "position": [
+        -20,
+        160
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar \u2014 connect yours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Finds the first free 30-min slot: 10:00\u201318:00, Mon\u2013Fri, next 5 days, 15-min buffer.\n// Real calendar math in code \u2014 the AI never guesses dates.\nconst lead = $('Parse AI Answer').first().json;\nconst { DateTime } = require('luxon');\nconst TZ = lead.timezone || 'UTC';\nconst MEET = 30, BUF = 15, DAYS = 5, H0 = 10, H1 = 18;\nconst busy = $input.all().map(i => ({\n  s: DateTime.fromISO(i.json.start?.dateTime || i.json.start?.date, { zone: TZ }),\n  e: DateTime.fromISO(i.json.end?.dateTime || i.json.end?.date, { zone: TZ })\n})).filter(b => b.s.isValid && b.e.isValid);\nconst now = DateTime.now().setZone(TZ).plus({ hours: 2 }); // 2h notice, no \"call in 5 min\"\nlet chosen = null;\nouter:\nfor (let d = 0; d <= DAYS && !chosen; d++) {\n  let day = now.plus({ days: d }).startOf('day');\n  if (day.weekday > 5) continue;                       // Sat/Sun off\n  for (let mins = H0 * 60; mins + MEET <= H1 * 60; mins += 30) {\n    const s = day.plus({ minutes: mins }), e = s.plus({ minutes: MEET });\n    if (e < now) continue;\n    const clash = busy.some(b => s < b.e.plus({ minutes: BUF }) && e > b.s.minus({ minutes: BUF }));\n    if (!clash) { chosen = { s, e }; break outer; }\n  }\n}\nif (!chosen) return [{ json: { ...lead, slotFound: false } }];\nconst label = chosen.s.setZone(TZ).toFormat(\"ccc, LLL d 'at' h:mm a\");\nreturn [{ json: { ...lead, slotFound: true,\n  slotStart: chosen.s.toISO(), slotEnd: chosen.e.toISO(), slotLabel: label } }];"
+      },
+      "id": "5677df3e-4db4-4def-9dc3-bbb6c512546b",
+      "name": "Find First Free Slot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.slotFound }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c6077647-745b-46e1-a416-35a45d3a2bbe",
+      "name": "Free Slot Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "primary"
+        },
+        "start": "={{ $json.slotStart }}",
+        "end": "={{ $json.slotEnd }}",
+        "summary": "=Call: {{ $json.name }} \u00d7 {{ $json.businessName }}",
+        "description": "=Need: {{ $json.need }}\nBudget: {{ $json.budget }}\nTimeline: {{ $json.timeline }}\n\nAI summary: {{ $json.summary }}",
+        "additionalFields": {
+          "attendees": [
+            "={{ $json.email }}"
+          ],
+          "sendUpdates": "all"
+        }
+      },
+      "id": "ee45e34d-cc32-4dfa-80ce-d52b786ae329",
+      "name": "Book the Call",
+      "type": "n8n-nodes-google.calendar",
+      "typeVersion": 1.2,
+      "position": [
+        700,
+        40
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar \u2014 connect yours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $('Parse AI Answer').first().json.email }}",
+        "subject": "=You're booked: {{ $('Parse AI Answer').first().json.slotLabel }} \u2705",
+        "message": "=Hi {{ $('Parse AI Answer').first().json.name }},\n\nConfirmed \u2014 your call with {{ $('Parse AI Answer').first().json.businessName }} is booked for {{ $('Parse AI Answer').first().json.slotLabel }}.\nThe calendar invite is already on its way, so it's in both our calendars.\n\n{{ $('Parse AI Answer').first().json.hook }}\n\nNeed to move it? Just reply to this email.\n\n\u2014 {{ $('Parse AI Answer').first().json.businessName }}",
+        "options": {}
+      },
+      "id": "c1131158-4300-4a5d-a539-0e7f8848853f",
+      "name": "Send Confirmation Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        940,
+        40
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail \u2014 connect yours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1",
+              "name": "booked",
+              "type": "boolean",
+              "value": true
+            }
+          ]
+        },
+        "options": {},
+        "include": "allExcept",
+        "includeFields": ""
+      },
+      "id": "2fee690a-6061-4840-b74e-688e9f7b8159",
+      "name": "Mark Booked",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1180,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.email }}",
+        "subject": "=You're qualified \u2014 grabbing you a time now",
+        "message": "=Hi {{ $json.name }},\n\nGood news \u2014 you're exactly who we work with. The calendar is just full this week, so a human is picking you a slot right now and will confirm today.\n\n{{ $json.hook }}\n\n\u2014 {{ $json.businessName }}",
+        "options": {}
+      },
+      "id": "9bfd3182-593e-4f73-8327-80f59cb9a253",
+      "name": "Send No-Slot Note",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        700,
+        320
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail \u2014 connect yours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.fit }}",
+              "rightValue": "REVIEW",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "84ab38da-12e6-4e5b-a4bf-388859973d4a",
+      "name": "Needs Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -20,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Thanks for reaching out to {{ $json.businessName }}",
+        "message": "=Hi {{ $json.name }},\n\nThanks for telling us about your project. Right now it's not the perfect match for how we work \u2014 and we'd rather tell you that honestly than book a call that wastes your time.\n\nIf things change, reply here anytime.\n\n\u2014 {{ $json.businessName }}",
+        "options": {}
+      },
+      "id": "72e09f86-b927-469d-97bf-343505531647",
+      "name": "Send Kind Follow-Up",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        220,
+        700
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail \u2014 connect yours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.ownerEmail }}",
+        "subject": "=\ud83d\udd0d Lead needs a human: {{ $json.name }}",
+        "message": "=The AI wasn't sure \u2014 your call, boss.\n\nName: {{ $json.name }}\nEmail: {{ $json.email }}\nNeed: {{ $json.need }}\nBudget: {{ $json.budget }}\nTimeline: {{ $json.timeline }}\n\nAI note: {{ $json.summary }}",
+        "options": {}
+      },
+      "id": "baaddfca-310c-430f-ae64-2885ca3ace05",
+      "name": "Alert Owner to Review",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        220,
+        480
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail \u2014 connect yours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "leads",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "name",
+              "fieldValue": "={{ $json.name }}"
+            },
+            {
+              "fieldId": "email",
+              "fieldValue": "={{ $json.email }}"
+            },
+            {
+              "fieldId": "need",
+              "fieldValue": "={{ $json.need }}"
+            },
+            {
+              "fieldId": "budget",
+              "fieldValue": "={{ $json.budget }}"
+            },
+            {
+              "fieldId": "timeline",
+              "fieldValue": "={{ $json.timeline }}"
+            },
+            {
+              "fieldId": "fit",
+              "fieldValue": "={{ $json.fit }}"
+            },
+            {
+              "fieldId": "service",
+              "fieldValue": "={{ $json.service }}"
+            },
+            {
+              "fieldId": "ai_summary",
+              "fieldValue": "={{ $json.summary }}"
+            },
+            {
+              "fieldId": "booked",
+              "fieldValue": "={{ $json.booked === true }}"
+            },
+            {
+              "fieldId": "slot_label",
+              "fieldValue": "={{ $json.slotLabel || '' }}"
+            }
+          ]
+        }
+      },
+      "id": "f7c1dbc3-3466-43dd-a079-f4de41758d83",
+      "name": "Save Lead in Supabase",
+      "type": "n8n-nodes-supabase",
+      "typeVersion": 1,
+      "position": [
+        700,
+        560
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "",
+          "name": "Supabase \u2014 connect yours"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "New Lead Form": {
+      "main": [
+        [
+          {
+            "node": "Business Setup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Qualify Lead (AI)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Setup": {
+      "main": [
+        [
+          {
+            "node": "Qualify Lead (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualify Lead (AI)": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Answer": {
+      "main": [
+        [
+          {
+            "node": "Good Fit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Good Fit?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Calendar Window",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Needs Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Calendar Window": {
+      "main": [
+        [
+          {
+            "node": "Find First Free Slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find First Free Slot": {
+      "main": [
+        [
+          {
+            "node": "Free Slot Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Free Slot Found?": {
+      "main": [
+        [
+          {
+            "node": "Book the Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send No-Slot Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Book the Call": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Confirmation Email": {
+      "main": [
+        [
+          {
+            "node": "Mark Booked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Review?": {
+      "main": [
+        [
+          {
+            "node": "Alert Owner to Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Kind Follow-Up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Booked": {
+      "main": [
+        [
+          {
+            "node": "Save Lead in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send No-Slot Note": {
+      "main": [
+        [
+          {
+            "node": "Save Lead in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Kind Follow-Up": {
+      "main": [
+        [
+          {
+            "node": "Save Lead in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Owner to Review": {
+      "main": [
+        [
+          {
+            "node": "Save Lead in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": ""
+  }
+}
