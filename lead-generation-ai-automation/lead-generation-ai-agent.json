@@ -1,0 +1,246 @@
+{
+  "name": "AI Lead Machine — find, enrich, qualify, sheet",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "a1f0e2d3-0001-4a1a-9a1a-000000000001",
+      "name": "On form submission",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [-1400, 0],
+      "webhookId": "lead-machine-form",
+      "parameters": {
+        "formTitle": "AI Lead Machine",
+        "formDescription": "Tell the machine who to find and what counts as a good lead.",
+        "formFields": {
+          "values": [
+            { "fieldLabel": "Business / Client Type", "fieldType": "text", "placeholder": "e.g. gyms, dental clinics, real-estate agents", "requiredField": true },
+            { "fieldLabel": "Number of Leads", "fieldType": "number", "placeholder": "e.g. 50", "requiredField": true },
+            { "fieldLabel": "City", "fieldType": "text", "placeholder": "e.g. Karachi", "requiredField": true },
+            { "fieldLabel": "Qualification Criteria / Special Requirements", "fieldType": "textarea", "placeholder": "e.g. must have a website, rating between 3.8 and 4.5, recent complaints about slow response are a PLUS", "requiredField": false }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1f0e2d3-0002-4a1a-9a1a-000000000002",
+      "name": "Build Apify Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1180, 0],
+      "parameters": {
+        "jsCode": "const f = $('On form submission').item.json;\nconst n = Math.min(Math.max(Number(f['Number of Leads'] || 50), 1), 100);\nreturn [{ json: { input: { searchStringsArray: [f['Business / Client Type']], locationQuery: f['City'], maxCrawledPlacesPerSearch: n, language: 'en' } } }];"
+      }
+    },
+    {
+      "id": "a1f0e2d3-0003-4a1a-9a1a-000000000003",
+      "name": "Apify — Google Maps Extract",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-960, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/compass/crawler-google-places/run-sync-get-dataset-items?token=APIFY_TOKEN_PLACEHOLDER&clean=1&timeout=240",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.input) }}",
+        "options": { "timeout": 300000 },
+        "onError": "stopWorkflow"
+      }
+    },
+    {
+      "id": "a1f0e2d3-0004-4a1a-9a1a-000000000004",
+      "name": "Normalize Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-740, 0],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst out = [];\nfor (const it of items) {\n  const r = it.json || {};\n  const rev = Array.isArray(r.reviews) ? r.reviews : [];\n  const name = r.title || r.name || '';\n  if (!name) continue;\n  out.push({ json: {\n    name,\n    city: r.city || (r.address && (r.address.city || r.address)) || '',\n    phone: r.phone || r.phoneNumber || '',\n    website: r.website || r.webSite || r.url || '',\n    rating: Number(r.rating ?? r.totalScore ?? r.stars ?? 0),\n    reviews_count: Number(r.reviewsCount ?? r.totalReviews ?? rev.length ?? 0),\n    reviews_text: rev.slice(0, 6).map(x => (typeof x === 'string' ? x : (x.text || x.reviewText || ''))).filter(Boolean).join(' | ').slice(0, 1500)\n  }});\n}\nreturn out.length ? out : [{ json: { __empty: true } }];"
+      }
+    },
+    {
+      "id": "a1f0e2d3-0005-4a1a-9a1a-000000000005",
+      "name": "Loop Leads",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-520, 0],
+      "parameters": { "batchSize": 1, "options": {} }
+    },
+    {
+      "id": "a1f0e2d3-0006-4a1a-9a1a-000000000006",
+      "name": "Has Website?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-300, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [
+            { "id": "c1", "leftValue": "={{ !!$json.website }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1f0e2d3-0007-4a1a-9a1a-000000000007",
+      "name": "Firecrawl Enrich",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-80, -220],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "Bearer FIRECRAWL_TOKEN_PLACEHOLDER" },
+          { "name": "Content-Type", "value": "application/json" }
+        ]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.website, formats: ['markdown'], onlyMainContent: true }) }}",
+        "options": { "timeout": 60000 },
+        "onError": "continueRegularOutput"
+      }
+    },
+    {
+      "id": "a1f0e2d3-0008-4a1a-9a1a-000000000008",
+      "name": "Package for Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [140, 0],
+      "parameters": {
+        "jsCode": "const lead = $('Loop Leads').item.json;\nlet md = '';\ntry { md = ($('Firecrawl Enrich').item.json.data || {}).markdown || ''; } catch (e) { md = ''; }\nconst f = $('On form submission').item.json;\nreturn [{ json: { lead, enrichment: String(md).slice(0, 5000), business: f['Business / Client Type'], city: f['City'], criteria: f['Qualification Criteria / Special Requirements'] || 'none given — use the default rubric' } }];"
+      }
+    },
+    {
+      "id": "a1f0e2d3-0009-4a1a-9a1a-000000000009",
+      "name": "Qualify Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [380, 0],
+      "parameters": {
+        "promptType": "define",
+        "text": "=LEAD TO JUDGE:\n{{ JSON.stringify($json.lead) }}\n\nWEBSITE INSIGHTS (may be empty):\n{{ $json.enrichment }}\n\nTARGET BUSINESS TYPE: {{ $json.business }} (city: {{ $json.city }})\nCUSTOM CRITERIA FROM OPERATOR: {{ $json.criteria }}",
+        "options": {
+          "systemMessage": "You are LEAD QUALIFIER, the scoring brain of a lead-generation machine. You judge ONE business per run. Be strict but fair: never accept everyone, never reject everyone.\n\nSCORE 0-100 using evidence only:\n+15 live website present\n+15 20+ public reviews\n+20 rating between 3.8 and 4.5 (a service gap the operator can genuinely help with)\n+10 at least one review in the last 90 days\n+20 any review or page text shows real pain the operator's business type can fix (slow response, hard to book, outdated experience, 'wish they...')\n+10 phone or email publicly listed\n+10 active social or site content in the last 60 days\n\nCALIBRATION RULES (this is what makes you smart):\n- If data is sparse (few reviews, no website insights), do NOT reject for missing data. Score on what exists, cap at 60, and say in reason which data is missing.\n- Never mark qualified:true without citing one concrete piece of evidence in reason.\n- Never mark qualified:false without saying what would have flipped it to yes.\n- 70+ => qualified true. 55-69 => false (borderline, explain). <55 => false.\n- Custom criteria from the operator OVERRIDE matching rubric lines when they conflict.\n- Extract hook: one quoted phrase from a review or one observable website gap. If none, hook = \"NONE\".\n\nOutput ONLY the structured object: score (number), qualified (boolean), reason (one human sentence), hook (string)."
+        },
+        "hasOutputParser": true
+      }
+    },
+    {
+      "id": "a1f0e2d3-0010-4a1a-9a1a-000000000010",
+      "name": "Gemini Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [300, 300],
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": { "temperature": 0.2 }
+      }
+    },
+    {
+      "id": "a1f0e2d3-0011-4a1a-9a1a-000000000011",
+      "name": "Structured Output",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [520, 300],
+      "parameters": {
+        "jsonSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"score\": { \"type\": \"number\" },\n    \"qualified\": { \"type\": \"boolean\" },\n    \"reason\": { \"type\": \"string\" },\n    \"hook\": { \"type\": \"string\" }\n  },\n  \"required\": [\"score\", \"qualified\", \"reason\", \"hook\"]\n}"
+      }
+    },
+    {
+      "id": "a1f0e2d3-0012-4a1a-9a1a-000000000012",
+      "name": "Qualified?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [640, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [
+            { "id": "q1", "leftValue": "={{ $json.output.qualified === true }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1f0e2d3-0013-4a1a-9a1a-000000000013",
+      "name": "Sheet — qualified",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [900, -220],
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "YOUR_GOOGLE_SHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "qualified" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $('Package for Agent').item.json.lead.name }}",
+            "city": "={{ $('Package for Agent').item.json.lead.city }}",
+            "phone": "={{ $('Package for Agent').item.json.lead.phone }}",
+            "website": "={{ $('Package for Agent').item.json.lead.website }}",
+            "rating": "={{ $('Package for Agent').item.json.lead.rating }}",
+            "score": "={{ $json.output.score }}",
+            "hook": "={{ $json.output.hook }}",
+            "reason": "={{ $json.output.reason }}",
+            "date": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1f0e2d3-0014-4a1a-9a1a-000000000014",
+      "name": "Sheet — log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [900, 120],
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "YOUR_GOOGLE_SHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "log" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $('Package for Agent').item.json.lead.name }}",
+            "city": "={{ $('Package for Agent').item.json.lead.city }}",
+            "score": "={{ $json.output.score }}",
+            "status": "={{ $json.output.qualified === true ? 'QUALIFIED' : 'REJECTED' }}",
+            "reason": "={{ $json.output.reason }}",
+            "date": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "On form submission": { "main": [[{ "node": "Build Apify Input", "type": "main", "index": 0 }]] },
+    "Build Apify Input": { "main": [[{ "node": "Apify — Google Maps Extract", "type": "main", "index": 0 }]] },
+    "Apify — Google Maps Extract": { "main": [[{ "node": "Normalize Leads", "type": "main", "index": 0 }]] },
+    "Normalize Leads": { "main": [[{ "node": "Loop Leads", "type": "main", "index": 0 }]] },
+    "Loop Leads": { "main": [ [], [{ "node": "Has Website?", "type": "main", "index": 0 }] ] },
+    "Has Website?": { "main": [
+      [{ "node": "Firecrawl Enrich", "type": "main", "index": 0 }],
+      [{ "node": "Package for Agent", "type": "main", "index": 0 }]
+    ]},
+    "Firecrawl Enrich": { "main": [[{ "node": "Package for Agent", "type": "main", "index": 0 }]] },
+    "Package for Agent": { "main": [[{ "node": "Qualify Agent", "type": "main", "index": 0 }]] },
+    "Gemini Model": { "ai_languageModel": [[{ "node": "Qualify Agent", "type": "ai_languageModel", "index": 0 }]] },
+    "Structured Output": { "ai_outputParser": [[{ "node": "Qualify Agent", "type": "ai_outputParser", "index": 0 }]] },
+    "Qualify Agent": { "main": [[{ "node": "Qualified?", "type": "main", "index": 0 }]] },
+    "Qualified?": { "main": [
+      [ { "node": "Sheet — qualified", "type": "main", "index": 0 }, { "node": "Sheet — log", "type": "main", "index": 0 } ],
+      [ { "node": "Sheet — log", "type": "main", "index": 0 } ]
+    ]},
+    "Sheet — qualified": { "main": [[{ "node": "Loop Leads", "type": "main", "index": 0 }]] },
+    "Sheet — log": { "main": [[{ "node": "Loop Leads", "type": "main", "index": 0 }]] }
+  }
+}
