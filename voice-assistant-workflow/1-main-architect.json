@@ -1,0 +1,334 @@
+{
+  "name": "Voice Assistant \u2014 Main Architect",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "elevenlabs-actions",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "88F9E406081D46B3",
+      "name": "ElevenLabs Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -680,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Extract the ElevenLabs webhook tool payload (error-tolerant)\nconst out = { query: '', context: '', conversation_id: '', ok: true, error: '' };\ntry {\n  const b = $json.body || $json;\n  out.query = String(b.query || b.action || b.request || b.text || '').slice(0, 1000);\n  out.context = String(b.context || b.notes || '').slice(0, 1000);\n  out.conversation_id = String(b.conversation_id || '');\n} catch (e) { out.error = String(e); }\nif (!out.query.trim()) { out.ok = false; out.error = 'No query field found. Configure the ElevenLabs webhook tool to send { query, context }.'; }\nreturn [{ json: out }];"
+      },
+      "id": "7597CD0E14434DB1",
+      "name": "Extract Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "F1F999C3D84346F1",
+              "name": "owner_name",
+              "value": "REPLACE_YOUR_NAME",
+              "type": "string"
+            },
+            {
+              "id": "6B94AADCB9BE4735",
+              "name": "timezone",
+              "value": "REPLACE_TIMEZONE",
+              "type": "string"
+            },
+            {
+              "id": "09F33F8A798D489B",
+              "name": "default_slack_channel",
+              "value": "#general",
+              "type": "string"
+            },
+            {
+              "id": "6639B63B712E4C16",
+              "name": "max_results",
+              "value": 5,
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "id": "AFEC668DF8194732",
+      "name": "Business Setup",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -240,
+        -16
+      ],
+      "notes": "EDIT ME: your name, your timezone (e.g. America/New_York), your default Slack channel"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "id": "1C216CEE1F2F472C",
+      "name": "GPT Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -100,
+        178
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "email_agent",
+        "description": "Performs ANY Gmail action: send, draft, reply, search/find emails, get recent emails, delete emails. Input: full task instruction with all details.",
+        "workflowId": "REPLACE_WITH_EMAIL_AGENT_WORKFLOW_ID",
+        "workflowMode": "each"
+      },
+      "id": "CC9CAEC982A64049",
+      "name": "email_agent",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        180,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "name": "calendar_agent",
+        "description": "Performs ANY Google Calendar action: create events, list today/this week, update, delete events. Input: full task instruction with all details.",
+        "workflowId": "REPLACE_WITH_CALENDAR_AGENT_WORKFLOW_ID",
+        "workflowMode": "each"
+      },
+      "id": "03C34A72BAB747FA",
+      "name": "calendar_agent",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        340,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "name": "slack_agent",
+        "description": "Performs ANY Slack action: post a message, read recent channel messages, update or delete messages. Input: full task instruction with all details.",
+        "workflowId": "REPLACE_WITH_SLACK_AGENT_WORKFLOW_ID",
+        "workflowMode": "each"
+      },
+      "id": "945C6AE65E7F4EB9",
+      "name": "slack_agent",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        500,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "name": "youtube_agent",
+        "description": "Performs YouTube actions: search videos, get video details and stats, read comments, add a video to a playlist. Input: full task instruction with all details.",
+        "workflowId": "REPLACE_WITH_YOUTUBE_AGENT_WORKFLOW_ID",
+        "workflowMode": "each"
+      },
+      "id": "912D2AE68FB7403F",
+      "name": "youtube_agent",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        660,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.query }}",
+        "options": {
+          "systemMessage": "You are the ORCHESTRATOR of a personal AI voice assistant. You receive ONE user request (spoken, transcribed) from the ElevenLabs voice agent via webhook.\n\nYOUR ONLY JOBS:\n1. CLASSIFY the intent: email | calendar | slack | youtube | general.\n2. If it is GENERAL (greetings, questions about the assistant, small talk) \u2192 answer yourself in max 2 short sentences. Never touch tools.\n3. If it needs an ACTION \u2192 call EXACTLY ONE specialist tool:\n   - \"email_agent\" for ANYTHING Gmail: send, draft, reply, find/search emails, get recent emails, delete.\n   - \"calendar_agent\" for ANYTHING Google Calendar: create events, check today/this week, update, delete.\n   - \"slack_agent\" for ANYTHING Slack: post messages, read channels, update or delete messages.\n   - \"youtube_agent\" for ANYTHING YouTube: search videos, video details, comments, playlist adds.\n4. When calling a tool, write the task as one complete natural-language instruction containing EVERY detail the user gave (who, what, when, which channel, which video). Never drop details. Never add details the user did not say.\n5. If the tool result contains \"needs_confirmation\": true \u2192 ask the user for a short yes/no confirmation (\"I will delete the email from Sam \u2014 confirm?\"). Do NOT claim the action happened.\n6. If the user then says yes/confirm/do it \u2192 call the SAME tool again with the SAME task plus the word \"confirmed\".\n7. If the tool result contains \"missing_info\" \u2192 ask the user only for that missing piece. One short question. When they answer, call the tool again with the completed task.\n8. If the tool errored \u2192 say plainly it didn't work. No fake success.\n\nVOICE RULES (your reply is SPOKEN aloud): max 2 short sentences. Plain words. No markdown, no lists, no URLs, no emojis. Round numbers. Never say JSON, parameter, node, or workflow. If an action succeeded, say what happened (\"Done \u2014 email sent to Sam.\").",
+          "maxIterations": 5
+        }
+      },
+      "id": "575D3AFD90794F8F",
+      "name": "Main Architect Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        180,
+        -16
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Build the JSON ElevenLabs reads out; never crash the webhook\nlet text = '';\ntry {\n  const items = $input.all();\n  const last = items[items.length - 1].json;\n  text = last.output || last.text || last.voice_reply || last.result || '';\n} catch (e) {}\nif (!text) text = \"Hmm, that didn't come back clean. Try saying it again.\";\ntext = String(text).replace(/[*_#`>]/g, '').replace(/https?:\\/\\/\\S+/g, 'the link in the description').slice(0, 400);\nreturn [{ json: { result: text, spoken: text } }];"
+      },
+      "id": "6D97494E1A2149D8",
+      "name": "Build Voice Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseHeaders": {
+          "entries": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "8E7907E683C64296",
+      "name": "Respond to ElevenLabs",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        680,
+        -16
+      ]
+    }
+  ],
+  "connections": {
+    "ElevenLabs Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Request": {
+      "main": [
+        [
+          {
+            "node": "Business Setup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Setup": {
+      "main": [
+        [
+          {
+            "node": "Main Architect Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Main Architect Agent": {
+      "main": [
+        [
+          {
+            "node": "Build Voice Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Voice Reply": {
+      "main": [
+        [
+          {
+            "node": "Respond to ElevenLabs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT Model": {
+      "main": [
+        [
+          {
+            "node": "Main Architect Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "email_agent": {
+      "main": [
+        [
+          {
+            "node": "Main Architect Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calendar_agent": {
+      "main": [
+        [
+          {
+            "node": "Main Architect Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "slack_agent": {
+      "main": [
+        [
+          {
+            "node": "Main Architect Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "youtube_agent": {
+      "main": [
+        [
+          {
+            "node": "Main Architect Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

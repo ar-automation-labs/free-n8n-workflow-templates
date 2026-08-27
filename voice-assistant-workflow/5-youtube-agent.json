@@ -1,0 +1,875 @@
+{
+  "name": "Voice Assistant \u2014 YouTube Agent",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "3426AD8B8F6C40F7",
+      "name": "Called by Main Agent",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "B434E573652546F6",
+              "name": "youtube_api_key",
+              "value": "REPLACE_YOUTUBE_API_KEY",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "171E4EC7333F4F49",
+      "name": "App Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -460,
+        0
+      ],
+      "notes": "EDIT ME: app-specific settings (keeps incoming task fields)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Parse the task handed over by the Main Architect (error-tolerant)\nconst out = { task: '', ok: true };\ntry {\n  const items = $input.all();\n  const j = items[items.length - 1].json;\n  out.task = String(j.task || j.query || j.text || j.input || JSON.stringify(j)).slice(0, 1500);\n} catch (e) { out.task = String(e); }\nreturn [{ json: out }];"
+      },
+      "id": "29B8646415934487",
+      "name": "Parse Task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "id": "CDBCBD3C612F48D2",
+      "name": "GPT Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -100,
+        200
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "fromJson",
+        "jsonSchema": "{\"type\": \"object\", \"properties\": {\"operation\": {\"type\": \"string\"}, \"params\": {\"type\": \"object\"}, \"needs_confirmation\": {\"type\": \"boolean\"}, \"missing_info\": {\"type\": \"string\"}, \"voice_reply\": {\"type\": \"string\"}}, \"required\": [\"operation\", \"voice_reply\", \"needs_confirmation\"]}"
+      },
+      "id": "3C6298C22BF54389",
+      "name": "Action Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        330
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.task }}",
+        "options": {
+          "systemMessage": "You are the YOUTUBE SPECIALIST inside a personal AI voice assistant. You receive ONE task in natural language. Choose exactly ONE operation and fill its params.\n\nOPERATIONS:\n- search \u2192 params: {query, limit}\n- details \u2192 params: {video_query}. Title, channel, views, likes, date of the best match.\n- comments \u2192 params: {video_query, limit}\n- add_to_playlist \u2192 params: {video_query, playlist_id}\n- delete_video \u2192 params: {video_id}. EXTREMELY DANGEROUS.\n\nRULES:\n1. add_to_playlist and delete_video \u2192 ALWAYS needs_confirmation=true (\"I will add '<title>' to the playlist \u2014 confirm?\" / \"I will PERMANENTLY delete that video \u2014 confirm?\"). If the task already contains the word \"confirmed\", this IS the approved second pass: set needs_confirmation=false and execute now. Never ask twice for the same thing.\n2. Never invent video IDs, titles or stats \u2014 only what tools return. Missing required info (playlist id, video id) \u2192 missing_info=ONE short question, params={}, needs_confirmation=false.\n3. search/details/comments \u2192 voice_reply summarizes the top result(s), max 2 spoken sentences.\n4. Round numbers for voice (\"about 12 thousand views\")."
+        }
+      },
+      "id": "4E653EE2E0414687",
+      "name": "Specialist Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        180,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needs_confirmation }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{ ($json.missing_info || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "9D447DF1CE9645B8",
+      "name": "Ready to Execute?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "BD853BE3E56042C4",
+              "name": "operation",
+              "value": "ask_user",
+              "type": "string"
+            },
+            {
+              "id": "428508C378D646A7",
+              "name": "voice_reply",
+              "value": "={{ $('Specialist Agent').item.json.missing_info || $('Specialist Agent').item.json.voice_reply }}",
+              "type": "string"
+            },
+            {
+              "id": "E7ED562F21D743DF",
+              "name": "needs_confirmation",
+              "value": "={{ $('Specialist Agent').item.json.needs_confirmation }}",
+              "type": "boolean"
+            },
+            {
+              "id": "A944CAFCCCF24FA8",
+              "name": "missing_info",
+              "value": "={{ $('Specialist Agent').item.json.missing_info }}",
+              "type": "string"
+            },
+            {
+              "id": "57F33A76894D4C61",
+              "name": "params",
+              "value": {},
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "id": "6FC720903C1049F4",
+      "name": "Ask User",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        640,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "search",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "search"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "details",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "details"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "comments",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "comments"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "add_to_playlist",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "add_to_playlist"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "delete_video",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "delete_video"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "unsupported"
+        }
+      },
+      "id": "F679FBB5B7024577",
+      "name": "Route Operation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        640,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "88C136288A214255",
+              "name": "operation",
+              "value": "unsupported",
+              "type": "string"
+            },
+            {
+              "id": "13C14A266C844BB1",
+              "name": "voice_reply",
+              "value": "That specific action is not enabled yet.",
+              "type": "string"
+            },
+            {
+              "id": "7E2B766A35A44209",
+              "name": "needs_confirmation",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "0C96199CD6FB4508",
+              "name": "missing_info",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "551BC2D976644874",
+      "name": "Unsupported Op",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        940,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// One clean result object back to the Main Architect (never crash)\nlet r = { ok: true, workflow: \"YouTube Agent\", operation: 'unknown', summary: '', voice_reply: '', needs_confirmation: false, missing_info: '' };\ntry {\n  const items = $input.all();\n  const j = items[items.length - 1].json;\n  const agent = $('Specialist Agent').item.json;\n  r.operation = agent.operation || r.operation;\n  r.needs_confirmation = !!agent.needs_confirmation;\n  r.missing_info = agent.missing_info || '';\n  r.voice_reply = agent.voice_reply || '';\n  const d = j.messages || j.data || j.items || j.id || j;\n  r.summary = r.voice_reply || 'Done';\n  if (d && typeof d === 'object') r.details = Array.isArray(d) ? d.slice(0, 10) : d;\n  if (r.missing_info && !r.voice_reply) r.voice_reply = r.missing_info;\n} catch (e) { r.ok = false; r.summary = 'Tool error: ' + String(e); r.voice_reply = \"That didn't work \u2014 I'll try again.\"; }\nreturn [{ json: r }];"
+      },
+      "id": "EF3736C01BC943C9",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "method": "GET",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.params.query }}"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "maxResults",
+              "value": "={{ $json.params.limit || 5 }}"
+            },
+            {
+              "name": "key",
+              "value": "={{ $('App Config').item.json.youtube_api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5031DF065AAA4739",
+      "name": "YT Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        -220
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "method": "GET",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.params.video_query }}"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "maxResults",
+              "value": "1"
+            },
+            {
+              "name": "key",
+              "value": "={{ $('App Config').item.json.youtube_api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ECD0051445C44262",
+      "name": "Find Video for Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        -120
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/videos",
+        "method": "GET",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet,statistics"
+            },
+            {
+              "name": "id",
+              "value": "={{ $('Find Video for Details').item.json.items[0].id.videoId }}"
+            },
+            {
+              "name": "key",
+              "value": "={{ $('App Config').item.json.youtube_api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5533834FE0C14C0F",
+      "name": "YT Full Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        -120
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "method": "GET",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.params.video_query }}"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "maxResults",
+              "value": "1"
+            },
+            {
+              "name": "key",
+              "value": "={{ $('App Config').item.json.youtube_api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1359E0CFF9194B1A",
+      "name": "Find Video for Comments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        -20
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/commentThreads",
+        "method": "GET",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "videoId",
+              "value": "={{ $('Find Video for Comments').item.json.items[0].id.videoId }}"
+            },
+            {
+              "name": "maxResults",
+              "value": "={{ $json.params.limit || 10 }}"
+            },
+            {
+              "name": "order",
+              "value": "relevance"
+            },
+            {
+              "name": "key",
+              "value": "={{ $('App Config').item.json.youtube_api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3B713B3BB52E4CBA",
+      "name": "YT Comments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        -20
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "method": "GET",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.params.video_query }}"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "maxResults",
+              "value": "1"
+            },
+            {
+              "name": "key",
+              "value": "={{ $('App Config').item.json.youtube_api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2B9BD2A32ABB40B3",
+      "name": "Find Video for Playlist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        80
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/playlistItems",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"snippet\":{\"playlistId\":\"{{ $json.params.playlist_id }}\",\"resourceId\":{\"kind\":\"youtube#video\",\"videoId\":\"{{ $('Find Video for Playlist').item.json.items[0].id.videoId }}\"}}}",
+        "options": {}
+      },
+      "id": "61773DDF524545E2",
+      "name": "YT Playlist Add",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        80
+      ],
+      "notes": "Needs OAuth credential (see README)",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/videos",
+        "method": "DELETE",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "={{ $json.params.video_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "B677F7B479304A9C",
+      "name": "YT Delete Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        280
+      ],
+      "notes": "Needs OAuth credential (see README). EXTREMELY destructive \u2014 confirmation-gated.",
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Called by Main Agent": {
+      "main": [
+        [
+          {
+            "node": "App Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "App Config": {
+      "main": [
+        [
+          {
+            "node": "Parse Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Task": {
+      "main": [
+        [
+          {
+            "node": "Specialist Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Specialist Agent": {
+      "main": [
+        [
+          {
+            "node": "Ready to Execute?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT Model": {
+      "main": [
+        [
+          {
+            "node": "Specialist Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action Parser": {
+      "main": [
+        [
+          {
+            "node": "Specialist Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready to Execute?": {
+      "main": [
+        [
+          {
+            "node": "Ask User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask User": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Operation": {
+      "main": [
+        [
+          {
+            "node": "YT Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Video for Details",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Video for Comments",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Video for Playlist",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "YT Delete Video",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Unsupported Op",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YT Search": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Video for Details": {
+      "main": [
+        [
+          {
+            "node": "YT Full Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YT Full Details": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Video for Comments": {
+      "main": [
+        [
+          {
+            "node": "YT Comments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YT Comments": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Video for Playlist": {
+      "main": [
+        [
+          {
+            "node": "YT Playlist Add",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YT Playlist Add": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YT Delete Video": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsupported Op": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

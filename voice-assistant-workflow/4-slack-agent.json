@@ -1,0 +1,692 @@
+{
+  "name": "Voice Assistant \u2014 Slack Agent",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8B9A45BE2D69437D",
+      "name": "Called by Main Agent",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "53A198B8805A4AC0",
+              "name": "default_slack_channel",
+              "value": "#general",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "B4BAA21D87A54A22",
+      "name": "App Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -460,
+        0
+      ],
+      "notes": "EDIT ME: app-specific settings (keeps incoming task fields)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Parse the task handed over by the Main Architect (error-tolerant)\nconst out = { task: '', ok: true };\ntry {\n  const items = $input.all();\n  const j = items[items.length - 1].json;\n  out.task = String(j.task || j.query || j.text || j.input || JSON.stringify(j)).slice(0, 1500);\n} catch (e) { out.task = String(e); }\nreturn [{ json: out }];"
+      },
+      "id": "2BBAC8D142924E73",
+      "name": "Parse Task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "id": "15E54A083AC54B04",
+      "name": "GPT Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -100,
+        200
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "fromJson",
+        "jsonSchema": "{\"type\": \"object\", \"properties\": {\"operation\": {\"type\": \"string\"}, \"params\": {\"type\": \"object\"}, \"needs_confirmation\": {\"type\": \"boolean\"}, \"missing_info\": {\"type\": \"string\"}, \"voice_reply\": {\"type\": \"string\"}}, \"required\": [\"operation\", \"voice_reply\", \"needs_confirmation\"]}"
+      },
+      "id": "2FF0E317178E45CF",
+      "name": "Action Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        330
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.task }}",
+        "options": {
+          "systemMessage": "You are the SLACK SPECIALIST inside a personal AI voice assistant. You receive ONE task in natural language. Choose exactly ONE operation and fill its params.\n\nOPERATIONS:\n- post \u2192 params: {channel, text}\n- read \u2192 params: {channel, limit}\n- update \u2192 params: {channel, message_query, text}\n- delete \u2192 params: {channel, message_query}. DANGEROUS.\n\nRULES:\n1. update and delete \u2192 ALWAYS needs_confirmation=true (\"I will delete your last message in #general \u2014 confirm?\"). If the task already contains the word \"confirmed\", this IS the approved second pass: set needs_confirmation=false and execute now. Never ask twice for the same thing.\n2. read \u2192 summarize max 3 latest messages in voice_reply (\"Latest in #general: Sam asked about the demo, plus two pings from Ayesha.\").\n3. Never invent messages, people or channels. Missing info \u2192 missing_info=ONE short question, params={}.\n4. voice_reply: max 2 short spoken sentences, no channel formatting symbols."
+        }
+      },
+      "id": "CD0B5FAE343B4831",
+      "name": "Specialist Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        180,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needs_confirmation }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{ ($json.missing_info || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "445D8EE3ACEE42E6",
+      "name": "Ready to Execute?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "26F326BB33864D65",
+              "name": "operation",
+              "value": "ask_user",
+              "type": "string"
+            },
+            {
+              "id": "777194FA75104D29",
+              "name": "voice_reply",
+              "value": "={{ $('Specialist Agent').item.json.missing_info || $('Specialist Agent').item.json.voice_reply }}",
+              "type": "string"
+            },
+            {
+              "id": "34C51D4E4EDD43EF",
+              "name": "needs_confirmation",
+              "value": "={{ $('Specialist Agent').item.json.needs_confirmation }}",
+              "type": "boolean"
+            },
+            {
+              "id": "A13956C5823C4446",
+              "name": "missing_info",
+              "value": "={{ $('Specialist Agent').item.json.missing_info }}",
+              "type": "string"
+            },
+            {
+              "id": "45E9D03FF0774E90",
+              "name": "params",
+              "value": {},
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "id": "431CBBF025984D6D",
+      "name": "Ask User",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        640,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "post",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "post"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "read",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "read"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "update"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "delete"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "unsupported"
+        }
+      },
+      "id": "EE9B2F2510494C05",
+      "name": "Route Operation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        640,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9A536A8AFF1B466F",
+              "name": "operation",
+              "value": "unsupported",
+              "type": "string"
+            },
+            {
+              "id": "6A1B74C27517422E",
+              "name": "voice_reply",
+              "value": "That specific action is not enabled yet.",
+              "type": "string"
+            },
+            {
+              "id": "B5651C92AB6D4937",
+              "name": "needs_confirmation",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "50E19DFFBEDE4E5A",
+              "name": "missing_info",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "33B3956235E54683",
+      "name": "Unsupported Op",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        940,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// One clean result object back to the Main Architect (never crash)\nlet r = { ok: true, workflow: \"Slack Agent\", operation: 'unknown', summary: '', voice_reply: '', needs_confirmation: false, missing_info: '' };\ntry {\n  const items = $input.all();\n  const j = items[items.length - 1].json;\n  const agent = $('Specialist Agent').item.json;\n  r.operation = agent.operation || r.operation;\n  r.needs_confirmation = !!agent.needs_confirmation;\n  r.missing_info = agent.missing_info || '';\n  r.voice_reply = agent.voice_reply || '';\n  const d = j.messages || j.data || j.items || j.id || j;\n  r.summary = r.voice_reply || 'Done';\n  if (d && typeof d === 'object') r.details = Array.isArray(d) ? d.slice(0, 10) : d;\n  if (r.missing_info && !r.voice_reply) r.voice_reply = r.missing_info;\n} catch (e) { r.ok = false; r.summary = 'Tool error: ' + String(e); r.voice_reply = \"That didn't work \u2014 I'll try again.\"; }\nreturn [{ json: r }];"
+      },
+      "id": "6B840DFC9F614F74",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": "={{ $json.params.channel || $('App Config').item.json.default_slack_channel }}",
+        "text": "={{ $json.params.text }}",
+        "otherProperties": {}
+      },
+      "id": "F5580446CC19484B",
+      "name": "Slack Post",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        940,
+        -220
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "REPLACE_SLACK_CREDENTIAL",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "history",
+        "returnAll": false,
+        "limit": "={{ $json.params.limit || 5 }}",
+        "channelId": "={{ $json.params.channel || $('App Config').item.json.default_slack_channel }}",
+        "options": {}
+      },
+      "id": "D92AA7BEDD7140D3",
+      "name": "Slack Read",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        940,
+        -120
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "REPLACE_SLACK_CREDENTIAL",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "history",
+        "returnAll": false,
+        "limit": 5,
+        "channelId": "={{ $json.params.channel || $('App Config').item.json.default_slack_channel }}",
+        "options": {}
+      },
+      "id": "BB5449CBFE614054",
+      "name": "Find Message for Update",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        940,
+        -20
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "REPLACE_SLACK_CREDENTIAL",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "update",
+        "channelId": "={{ $json.params.channel || $('App Config').item.json.default_slack_channel }}",
+        "messageId": "={{ $('Find Message for Update').item.json.ts }}",
+        "text": "={{ $json.params.text }}"
+      },
+      "id": "48759F9FA9CA412C",
+      "name": "Slack Update",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        -20
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "REPLACE_SLACK_CREDENTIAL",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "history",
+        "returnAll": false,
+        "limit": 5,
+        "channelId": "={{ $json.params.channel || $('App Config').item.json.default_slack_channel }}",
+        "options": {}
+      },
+      "id": "7DCEA20482E940CA",
+      "name": "Find Message for Delete",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        940,
+        180
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "REPLACE_SLACK_CREDENTIAL",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "delete",
+        "channelId": "={{ $json.params.channel || $('App Config').item.json.default_slack_channel }}",
+        "messageId": "={{ $('Find Message for Delete').item.json.ts }}"
+      },
+      "id": "E9C7078196394225",
+      "name": "Slack Delete",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        180
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "REPLACE_SLACK_CREDENTIAL",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Called by Main Agent": {
+      "main": [
+        [
+          {
+            "node": "App Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "App Config": {
+      "main": [
+        [
+          {
+            "node": "Parse Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Task": {
+      "main": [
+        [
+          {
+            "node": "Specialist Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Specialist Agent": {
+      "main": [
+        [
+          {
+            "node": "Ready to Execute?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT Model": {
+      "main": [
+        [
+          {
+            "node": "Specialist Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action Parser": {
+      "main": [
+        [
+          {
+            "node": "Specialist Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready to Execute?": {
+      "main": [
+        [
+          {
+            "node": "Ask User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask User": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Operation": {
+      "main": [
+        [
+          {
+            "node": "Slack Post",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Read",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Message for Update",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Message for Delete",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Unsupported Op",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Post": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Read": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Message for Update": {
+      "main": [
+        [
+          {
+            "node": "Slack Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Update": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Message for Delete": {
+      "main": [
+        [
+          {
+            "node": "Slack Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Delete": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsupported Op": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

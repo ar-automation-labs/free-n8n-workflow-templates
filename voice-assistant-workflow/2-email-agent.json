@@ -1,0 +1,826 @@
+{
+  "name": "Voice Assistant \u2014 Email Agent (Gmail)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "181189F3B12E4C24",
+      "name": "Called by Main Agent",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "C1DA6C3051454775",
+              "name": "owner_name",
+              "value": "REPLACE_YOUR_NAME",
+              "type": "string"
+            },
+            {
+              "id": "952BD6F361EF4DFF",
+              "name": "allow_delete",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        }
+      },
+      "id": "D5C5D11C25924337",
+      "name": "App Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -460,
+        0
+      ],
+      "notes": "EDIT ME: app-specific settings (keeps incoming task fields)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Parse the task handed over by the Main Architect (error-tolerant)\nconst out = { task: '', ok: true };\ntry {\n  const items = $input.all();\n  const j = items[items.length - 1].json;\n  out.task = String(j.task || j.query || j.text || j.input || JSON.stringify(j)).slice(0, 1500);\n} catch (e) { out.task = String(e); }\nreturn [{ json: out }];"
+      },
+      "id": "62EC16C1CA2C4764",
+      "name": "Parse Task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "id": "0E9A59CD8E3B4C45",
+      "name": "GPT Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -100,
+        200
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "fromJson",
+        "jsonSchema": "{\"type\": \"object\", \"properties\": {\"operation\": {\"type\": \"string\"}, \"params\": {\"type\": \"object\"}, \"needs_confirmation\": {\"type\": \"boolean\"}, \"missing_info\": {\"type\": \"string\"}, \"voice_reply\": {\"type\": \"string\"}}, \"required\": [\"operation\", \"voice_reply\", \"needs_confirmation\"]}"
+      },
+      "id": "459FB0CDCB4048A8",
+      "name": "Action Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        330
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.task }}",
+        "options": {
+          "systemMessage": "You are the GMAIL SPECIALIST inside a personal AI voice assistant. You receive ONE task in natural language. Choose exactly ONE operation and fill its params. You never talk to the user directly \u2014 your voice_reply is spoken by the main agent.\n\nOPERATIONS:\n- send \u2192 params: {to, subject, body}. Send an email now.\n- draft \u2192 params: {subject, body}. Save a draft.\n- reply \u2192 params: {message_query, body}. Find the most recent matching email and reply to it.\n- find \u2192 params: {query, limit}. Search emails by sender/subject/keyword.\n- get_recent \u2192 params: {limit}. Latest inbox emails.\n- delete \u2192 params: {message_query}. DANGEROUS.\n\nRULES:\n1. delete \u2192 ALWAYS needs_confirmation=true, voice_reply=\"I will delete the email <short description> \u2014 say yes to confirm.\" Never delete on a first pass. If the task already contains the word \"confirmed\", this IS the approved second pass: set needs_confirmation=false and execute now. Never ask twice for the same thing.\n2. send needs to/subject/body. Anything missing \u2192 keep operation=\"send\", set missing_info=ONE short question (\"Who should I send it to?\") and voice_reply=that question, params={}. NEVER let a half-filled send execute.\n3. Never invent email addresses, dates or content the user did not give.\n4. Success voice_reply: max 2 short spoken sentences. For find/get_recent summarize the top 2-3 (\"Two emails from Sam \u2014 the newest is about the proposal.\")."
+        }
+      },
+      "id": "BBBDA2D70F754CF9",
+      "name": "Specialist Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        180,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needs_confirmation }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{ ($json.missing_info || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "3992DB8518044E91",
+      "name": "Ready to Execute?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "D076730633F94D88",
+              "name": "operation",
+              "value": "ask_user",
+              "type": "string"
+            },
+            {
+              "id": "43A745F186C84052",
+              "name": "voice_reply",
+              "value": "={{ $('Specialist Agent').item.json.missing_info || $('Specialist Agent').item.json.voice_reply }}",
+              "type": "string"
+            },
+            {
+              "id": "12F590EBF8204A47",
+              "name": "needs_confirmation",
+              "value": "={{ $('Specialist Agent').item.json.needs_confirmation }}",
+              "type": "boolean"
+            },
+            {
+              "id": "A84C03353A814F80",
+              "name": "missing_info",
+              "value": "={{ $('Specialist Agent').item.json.missing_info }}",
+              "type": "string"
+            },
+            {
+              "id": "DA2C55F440D14FB2",
+              "name": "params",
+              "value": {},
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "id": "368C59CF2691475A",
+      "name": "Ask User",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        640,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "send",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "send"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "draft",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "draft"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "reply",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "reply"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "find",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "find"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "get_recent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "get_recent"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": "delete"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "unsupported"
+        }
+      },
+      "id": "A23029076D494A7E",
+      "name": "Route Operation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        640,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "C3DE229B666E4761",
+              "name": "operation",
+              "value": "unsupported",
+              "type": "string"
+            },
+            {
+              "id": "89E963F57E804802",
+              "name": "voice_reply",
+              "value": "That specific action is not enabled yet.",
+              "type": "string"
+            },
+            {
+              "id": "FC15E2CE4D3345A9",
+              "name": "needs_confirmation",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "53AFDE63DBF94CBD",
+              "name": "missing_info",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "CA6C962E30964AB9",
+      "name": "Unsupported Op",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        940,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// One clean result object back to the Main Architect (never crash)\nlet r = { ok: true, workflow: \"Email Agent (Gmail)\", operation: 'unknown', summary: '', voice_reply: '', needs_confirmation: false, missing_info: '' };\ntry {\n  const items = $input.all();\n  const j = items[items.length - 1].json;\n  const agent = $('Specialist Agent').item.json;\n  r.operation = agent.operation || r.operation;\n  r.needs_confirmation = !!agent.needs_confirmation;\n  r.missing_info = agent.missing_info || '';\n  r.voice_reply = agent.voice_reply || '';\n  const d = j.messages || j.data || j.items || j.id || j;\n  r.summary = r.voice_reply || 'Done';\n  if (d && typeof d === 'object') r.details = Array.isArray(d) ? d.slice(0, 10) : d;\n  if (r.missing_info && !r.voice_reply) r.voice_reply = r.missing_info;\n} catch (e) { r.ok = false; r.summary = 'Tool error: ' + String(e); r.voice_reply = \"That didn't work \u2014 I'll try again.\"; }\nreturn [{ json: r }];"
+      },
+      "id": "F25DD467B88B466A",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.params.to }}",
+        "subject": "={{ $json.params.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.params.body }}",
+        "options": {}
+      },
+      "id": "E32E322A53264144",
+      "name": "Gmail Send",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        940,
+        -220
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "draft",
+        "draftType": "message",
+        "subject": "={{ $json.params.subject }}",
+        "message": "={{ $json.params.body }}",
+        "options": {}
+      },
+      "id": "84E2D5EA238D402A",
+      "name": "Gmail Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        940,
+        -120
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 1,
+        "filters": {
+          "q": "={{ $json.params.message_query }}"
+        },
+        "options": {}
+      },
+      "id": "1B73DCDE1EBE4BF1",
+      "name": "Find Email for Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        940,
+        -20
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "reply",
+        "messageId": "={{ $('Find Email for Reply').item.json.id }}",
+        "emailType": "text",
+        "message": "={{ $json.params.body }}",
+        "options": {}
+      },
+      "id": "18259441EE2A4700",
+      "name": "Gmail Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1180,
+        -20
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": "={{ $json.params.limit || 5 }}",
+        "filters": {
+          "q": "={{ $json.params.query }}"
+        },
+        "options": {}
+      },
+      "id": "048E88FFBD2948C1",
+      "name": "Gmail Find",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        940,
+        80
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": "={{ $json.params.limit || 5 }}",
+        "filters": {},
+        "options": {}
+      },
+      "id": "4156208F9AF049CD",
+      "name": "Gmail Recent",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        940,
+        180
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 1,
+        "filters": {
+          "q": "={{ $json.params.message_query }}"
+        },
+        "options": {}
+      },
+      "id": "4D74A7C3FE1049FE",
+      "name": "Find Email for Delete",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        940,
+        280
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "delete",
+        "messageId": "={{ $('Find Email for Delete').item.json.id }}",
+        "options": {}
+      },
+      "id": "D112614C13D140DC",
+      "name": "Gmail Delete",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1180,
+        280
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_GMAIL_CREDENTIAL",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Called by Main Agent": {
+      "main": [
+        [
+          {
+            "node": "App Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "App Config": {
+      "main": [
+        [
+          {
+            "node": "Parse Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Task": {
+      "main": [
+        [
+          {
+            "node": "Specialist Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Specialist Agent": {
+      "main": [
+        [
+          {
+            "node": "Ready to Execute?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT Model": {
+      "main": [
+        [
+          {
+            "node": "Specialist Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action Parser": {
+      "main": [
+        [
+          {
+            "node": "Specialist Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready to Execute?": {
+      "main": [
+        [
+          {
+            "node": "Ask User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask User": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Operation": {
+      "main": [
+        [
+          {
+            "node": "Gmail Send",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail Draft",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Email for Reply",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail Find",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail Recent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Email for Delete",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Unsupported Op",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Send": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Draft": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Email for Reply": {
+      "main": [
+        [
+          {
+            "node": "Gmail Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Reply": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Find": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Recent": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Email for Delete": {
+      "main": [
+        [
+          {
+            "node": "Gmail Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Delete": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsupported Op": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
