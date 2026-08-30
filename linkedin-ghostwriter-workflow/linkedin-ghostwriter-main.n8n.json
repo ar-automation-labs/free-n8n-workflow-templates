@@ -1,0 +1,775 @@
+{
+  "name": "LinkedIn Ghostwriter \u2014 Main",
+  "nodes": [
+    {
+      "id": "n01",
+      "name": "Every 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1400,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "notes": "Poll cadence. 15 min keeps you safe on the free Gemini tier."
+    },
+    {
+      "id": "n02",
+      "name": "CONFIG \u2014 edit me",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1200,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "sheet_id",
+              "value": "PASTE_YOUR_SPREADSHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "sheet_name",
+              "value": "ideas",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "gemini_key",
+              "value": "PASTE_YOUR_GEMINI_API_KEY",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "linkedin_person_id",
+              "value": "PASTE_YOUR_PERSON_ID",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "mode",
+              "value": "APPROVE",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "business",
+              "value": "I build n8n automations for local businesses",
+              "type": "string"
+            },
+            {
+              "id": "a7",
+              "name": "audience",
+              "value": "agency owners and solo founders",
+              "type": "string"
+            },
+            {
+              "id": "a8",
+              "name": "voice",
+              "value": "short sentences, plain words, honest numbers, dry humor",
+              "type": "string"
+            },
+            {
+              "id": "a9",
+              "name": "write_rules",
+              "value": "You are a world-class LinkedIn ghostwriter. Rules you MUST follow:\n1. HOOK: first line max 90 characters, concrete, creates an open loop. No hype words (no 'game-changer', 'insane', 'unlock').\n2. STRUCTURE: hook / one context line / 3-5 short punch lines / turn / one-line lesson / one question CTA. Blank line between lines.\n3. Lines max ~12 words. Total max 2400 characters.\n4. First person, operator voice. Zero hashtags, zero emojis, no income guarantees, no 'as an AI'.\n5. Use at most ONE specific number, taken from the research facts.\n6. CTA: one question a reader can answer in a comment.\n7. Match the VOICE NOTES exactly: sentence length, vocabulary, humor, honesty level.\n8. visual_prompt: describe ONE clean minimal infographic, dark neutral background, single chart or one bold stat, no logos, no watermark, max 6 words of text.\n9. first_comment: one short line to add as the first comment later (a tip or a link placeholder).",
+              "type": "string"
+            },
+            {
+              "id": "a10",
+              "name": "image_style",
+              "value": "Clean minimal LinkedIn infographic, dark charcoal background, one simple bar or line chart in green and cyan, bold single stat, generous whitespace, flat vector style, no watermark, no logos, at most 6 words of text.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "THE control room. Keys, ids, mode, business, audience, voice and the full writing doctrine \u2014 edit only this node."
+    },
+    {
+      "id": "n03",
+      "name": "Fetch ideas",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -1000,
+        0
+      ],
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('CONFIG \u2014 edit me').first().json.sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('CONFIG \u2014 edit me').first().json.sheet_name }}"
+        },
+        "options": {}
+      },
+      "notes": "Reads the sheet; every row carries its row_number."
+    },
+    {
+      "id": "n04",
+      "name": "Pick next unprocessed idea",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const rows=$input.all();\nconst open=s=>String(s??'').trim();\nconst r=rows.map(i=>i.json).find(r=>open(r.IDEA)&&['','NEW','QUEUED'].includes(open(r.STATUS).toUpperCase()));\nif(!r) return [];\nreturn [{json:{row_number:r.row_number, idea:String(r.IDEA)}}];\n"
+      },
+      "notes": "First row with an IDEA and STATUS empty/NEW/QUEUED. Nothing to do -> run ends silently."
+    },
+    {
+      "id": "n05",
+      "name": "Lock row -> WRITING",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -600,
+        0
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('CONFIG \u2014 edit me').first().json.sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('CONFIG \u2014 edit me').first().json.sheet_name }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Pick next unprocessed idea').first().json.row_number }}",
+            "STATUS": "WRITING"
+          },
+          "matchingColumns": [
+            "row_number"
+          ]
+        },
+        "options": {}
+      },
+      "notes": "Claims the row so the next poll can never double-process it."
+    },
+    {
+      "id": "n06",
+      "name": "Research (Gemini + Google Search)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -400,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "={{ $('CONFIG \u2014 edit me').first().json.gemini_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({contents:[{parts:[{text:'ROUGH IDEA: '+$('Pick next unprocessed idea').first().json.idea + '\\nBUSINESS: '+$('CONFIG \u2014 edit me').first().json.business+'\\nAUDIENCE: '+$('CONFIG \u2014 edit me').first().json.audience+'\\nFind the sharpest angle, up to 3 concrete verifiable facts with a source, and the audience pain this idea relieves.'}]}],tools:[{google_search:{}}],generationConfig:{responseMimeType:'application/json',responseSchema:{type:'OBJECT',properties:{angle:{type:'STRING'},facts:{type:'ARRAY',items:{type:'OBJECT',properties:{claim:{type:'STRING'},source:{type:'STRING'}},required:['claim','source']}},pain:{type:'STRING'}},required:['angle','facts','pain']}}}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "notes": "Real research via Google Search grounding; strict JSON out (angle / facts / pain).",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "n07",
+      "name": "Write post (structured JSON)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -200,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "={{ $('CONFIG \u2014 edit me').first().json.gemini_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({systemInstruction:{parts:[{text:$('CONFIG \u2014 edit me').first().json.write_rules+'\\nBUSINESS: '+$('CONFIG \u2014 edit me').first().json.business+'\\nVOICE NOTES: '+$('CONFIG \u2014 edit me').first().json.voice}]},contents:[{parts:[{text:'IDEA: '+$('Pick next unprocessed idea').first().json.idea+'\\nRESEARCH: '+JSON.stringify($json)}]}],generationConfig:{responseMimeType:'application/json',responseSchema:{type:'OBJECT',properties:{post:{type:'STRING'},visual_prompt:{type:'STRING'},first_comment:{type:'STRING'}},required:['post','visual_prompt','first_comment']}}}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "notes": "The doctrine from CONFIG is the system instruction. Strict JSON => downstream can never break.",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "n08",
+      "name": "Parse draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const raw=$input.first().json.candidates[0].content.parts.map(p=>p.text||'').join('');\nlet o; try{ o=JSON.parse(raw); }catch(e){ o={post:raw, visual_prompt:'', first_comment:''}; }\nif(!String(o.post||'').trim()) throw new Error('Gemini returned an empty post');\nreturn [{json:{post:String(o.post), visual_prompt:String(o.visual_prompt||''), first_comment:String(o.first_comment||'')}}];\n"
+      },
+      "notes": "Parses the draft; an empty post hard-fails into the ERROR lane instead of posting.",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "n09",
+      "name": "Draw visual (Nano Banana 2)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "={{ $('CONFIG \u2014 edit me').first().json.gemini_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({contents:[{parts:[{text:$('Parse draft').first().json.visual_prompt+'\\nSTYLE: '+$('CONFIG \u2014 edit me').first().json.image_style}]}]}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "notes": "image 2.0 visual, ~2c. If it fails, the post still goes out text-only.",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "n10",
+      "name": "Attach image binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const d=$('Pick next unprocessed idea').first().json;\nconst src=$input.first().json;\nlet out={json:{post:d.post!==undefined?d.post:d.post, visual_prompt:d.visual_prompt||'', first_comment:d.first_comment||'', has_image:false}};\ntry{\n  const part=(src.candidates?.[0]?.content?.parts||[]).find(p=>p.inlineData&&p.inlineData.data);\n  if(part){ out.json.has_image=true; out.binary={data:{data:part.inlineData.data, mimeType:part.inlineData.mimeType||'image/png', fileName:'visual.png'}}; }\n}catch(e){}\nreturn [out];\n"
+      },
+      "notes": "Converts inlineData to n8n binary 'data' for the LinkedIn node; sets has_image."
+    },
+    {
+      "id": "n11",
+      "name": "Mode = AUTO ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "Mod",
+              "leftValue": "={{ $('CONFIG \u2014 edit me').first().json.mode }}",
+              "rightValue": "AUTO",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "true -> publish now. false -> park as READY and wait for your APPROVED."
+    },
+    {
+      "id": "n12",
+      "name": "Has image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        -200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "Has",
+              "leftValue": "={{ $json.has_image }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "With art -> post with image; without -> text-only."
+    },
+    {
+      "id": "n13",
+      "name": "Post with image",
+      "type": "n8n-nodes-base.linkedIn",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        -320
+      ],
+      "parameters": {
+        "resource": "post",
+        "operation": "create",
+        "postAs": "person",
+        "person": "={{ $('CONFIG \u2014 edit me').first().json.linkedin_person_id }}",
+        "text": "={{ $json.post }}",
+        "shareMediaCategory": "IMAGE",
+        "additionalFields": {
+          "visibility": "PUBLIC"
+        },
+        "binaryPropertyName": "data"
+      },
+      "notes": "LinkedIn node: resource Post, operation Create, author = Person, visibility PUBLIC, uploads the attached binary image.",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "n14",
+      "name": "Post text-only",
+      "type": "n8n-nodes-base.linkedIn",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        -120
+      ],
+      "parameters": {
+        "resource": "post",
+        "operation": "create",
+        "postAs": "person",
+        "person": "={{ $('CONFIG \u2014 edit me').first().json.linkedin_person_id }}",
+        "text": "={{ $json.post }}",
+        "shareMediaCategory": "NONE",
+        "additionalFields": {
+          "visibility": "PUBLIC"
+        }
+      },
+      "notes": "LinkedIn node: resource Post, operation Create, author = Person, visibility PUBLIC, text-only.",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "n15",
+      "name": "Mark POSTED + URL",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1250,
+        -220
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('CONFIG \u2014 edit me').first().json.sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('CONFIG \u2014 edit me').first().json.sheet_name }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Pick next unprocessed idea').first().json.row_number }}",
+            "STATUS": "POSTED",
+            "POST": "={{ $('Parse draft').first().json.post }}",
+            "POST_URL": "={{ $json.id || '' }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ]
+        },
+        "options": {}
+      },
+      "notes": "Closes the loop; the row can never be picked up again."
+    },
+    {
+      "id": "n16",
+      "name": "Park as READY",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        800,
+        200
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('CONFIG \u2014 edit me').first().json.sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('CONFIG \u2014 edit me').first().json.sheet_name }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Pick next unprocessed idea').first().json.row_number }}",
+            "STATUS": "READY",
+            "POST": "={{ $json.post }}",
+            "VISUAL_PROMPT": "={{ $json.visual_prompt }}",
+            "FIRST_COMMENT": "={{ $json.first_comment }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ]
+        },
+        "options": {}
+      },
+      "notes": "Your editable draft lands in the sheet. Edit POST if you like, then set STATUS=APPROVED."
+    },
+    {
+      "id": "n17",
+      "name": "Capture error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        500
+      ],
+      "parameters": {
+        "jsCode": "const e=$input.first().json;\nconst row=$('Pick next unprocessed idea').first()?.json?.row_number;\nreturn [{json:{row_number:row, msg:String(e.message||e.error||'unknown error').slice(0,400)}}];\n"
+      },
+      "notes": "Every failing node lands here with its reason."
+    },
+    {
+      "id": "n18",
+      "name": "Mark ERROR",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        800,
+        500
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('CONFIG \u2014 edit me').first().json.sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('CONFIG \u2014 edit me').first().json.sheet_name }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.row_number }}",
+            "STATUS": "ERROR",
+            "ERROR": "={{ $json.msg }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ]
+        },
+        "options": {}
+      },
+      "notes": "Nothing dies silently. Fix, then set STATUS=NEW to retry."
+    }
+  ],
+  "connections": {
+    "Every 15 min": {
+      "main": [
+        [
+          {
+            "node": "CONFIG \u2014 edit me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIG \u2014 edit me": {
+      "main": [
+        [
+          {
+            "node": "Fetch ideas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch ideas": {
+      "main": [
+        [
+          {
+            "node": "Pick next unprocessed idea",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick next unprocessed idea": {
+      "main": [
+        [
+          {
+            "node": "Lock row -> WRITING",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lock row -> WRITING": {
+      "main": [
+        [
+          {
+            "node": "Research (Gemini + Google Search)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research (Gemini + Google Search)": {
+      "main": [
+        [
+          {
+            "node": "Write post (structured JSON)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Capture error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write post (structured JSON)": {
+      "main": [
+        [
+          {
+            "node": "Parse draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Capture error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse draft": {
+      "main": [
+        [
+          {
+            "node": "Draw visual (Nano Banana 2)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Capture error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draw visual (Nano Banana 2)": {
+      "main": [
+        [
+          {
+            "node": "Attach image binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Attach image binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach image binary": {
+      "main": [
+        [
+          {
+            "node": "Mode = AUTO ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mode = AUTO ?": {
+      "main": [
+        [
+          {
+            "node": "Has image?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Park as READY",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has image?": {
+      "main": [
+        [
+          {
+            "node": "Post with image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post text-only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post with image": {
+      "main": [
+        [
+          {
+            "node": "Mark POSTED + URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Capture error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post text-only": {
+      "main": [
+        [
+          {
+            "node": "Mark POSTED + URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Capture error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Capture error": {
+      "main": [
+        [
+          {
+            "node": "Mark ERROR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
