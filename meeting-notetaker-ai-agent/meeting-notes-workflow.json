@@ -1,0 +1,335 @@
+{
+  "name": "Meeting notes \u2192 Sheet + client recap + coach note",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meeting-transcript",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "f3d63851b3",
+      "name": "1 \u00b7 Webhook \u2014 transcript in",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5e17de9f1e",
+              "name": "businessName",
+              "value": "YOUR BUSINESS NAME",
+              "type": "string"
+            },
+            {
+              "id": "2d0213204f",
+              "name": "senderName",
+              "value": "YOUR NAME",
+              "type": "string"
+            },
+            {
+              "id": "e4f6db40e0",
+              "name": "yourEmail",
+              "value": "you@example.com",
+              "type": "string"
+            },
+            {
+              "id": "d676405d1d",
+              "name": "tone",
+              "value": "warm, direct, professional",
+              "type": "string"
+            },
+            {
+              "id": "5b8144357b",
+              "name": "sheetId",
+              "value": "PASTE_YOUR_GOOGLE_SHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "0a1942ee13",
+              "name": "sheetTab",
+              "value": "Meeting Log",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8364c54d59",
+      "name": "2 \u00b7 Setup \u2014 edit your business info",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "You are an executive meeting assistant. Use ONLY the call transcript provided below. Extract and return STRICT valid JSON (no markdown, no commentary) with exactly these keys:\n\n{\n  \"summary\": string,            // 2-3 sentence recap of what the call covered\n  \"decisions\": string[],        // key decisions actually made on the call\n  \"actionItems\": [             // every next step\n    {\"task\": string, \"owner\": string, \"dueDate\": string}\n  ],\n  \"clientEmailRecap\": string,  // a friendly recap email the client receives (see format)\n  \"coachNote\": string          // one honest, specific line on how the seller can do better next time\n}\n\nRules:\n- Do not invent facts. If the transcript does not mention a date/owner, put \"TBD\".\n- Each action item must have an owner (the client or us) and a dueDate.\n\nclientEmailRecap format (plain text, sign as the sender name):\n\"Subject: Recap + your next steps from our call\n\nHi {{ $json.clientName or 'there' }},\n\nThanks for the call. Here's what we covered and agreed:\n- <decision>\n- <decision>\n\nYour next steps:\n1. <action> (by <due>)\n2. <action>\n\nOur next steps:\n1. <action owned by us>\n\n<one warm closing line>\n\n\u2014 <senderName>\"\n\nTRANSCRIPT (note-taker output):\n{{ $json.body.transcript or $json.transcript }}\n\nCLIENT NAME: {{ $json.body.clientName or $json.clientName }}\n\nWrite the email in this tone: {{ $('2 \u00b7 Setup \u2014 edit your business info').item.json.tone }}",
+        "options": {
+          "systemMessage": "You output only valid JSON. Never add markdown fences or prose outside the JSON object."
+        }
+      },
+      "id": "75b2fa9a97",
+      "name": "3 \u00b7 AI Agent \u2014 structures the call",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "baseURL": "https://api.openai.com/v1"
+        }
+      },
+      "id": "ea2cc9fa4e",
+      "name": "Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        620,
+        120
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_WITH_YOUR_OPENAI_CRED_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 8
+      },
+      "id": "40deb1ae49",
+      "name": "Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        760,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Pull the agent's text output, strip any accidental markdown fences, parse it.\nconst raw = $input.first().json;\nlet text = raw.output || raw.text || raw.response || JSON.stringify(raw);\ntext = String(text).replace(/```json/gi,'').replace(/```/g,'').trim();\n// find first { to last }\nconst s = text.indexOf('{'), e = text.lastIndexOf('}');\nlet data;\ntry { data = JSON.parse(text.slice(s, e+1)); }\ncatch(err) { data = { summary:text, decisions:[], actionItems:[], clientEmailRecap:'', coachNote:'(agent did not return valid JSON)' }; }\n\nconst setup = $('2 \u00b7 Setup \u2014 edit your business info').first().json;\nconst hook = $('1 \u00b7 Webhook \u2014 transcript in').first().json;\nconst body = hook.body || hook;\n\nreturn [{ json: {\n  ...data,\n  clientName: body.clientName || 'there',\n  clientEmail: body.clientEmail || '',\n  callDate: body.callDate || new Date().toISOString().slice(0,10),\n  businessName: setup.businessName,\n  senderName: setup.senderName,\n  yourEmail: setup.yourEmail,\n  actionCount: (data.actionItems||[]).length\n}}];"
+      },
+      "id": "e2b3851d71",
+      "name": "4 \u00b7 Parse agent JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('2 \u00b7 Setup \u2014 edit your business info').item.json.sheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('2 \u00b7 Setup \u2014 edit your business info').item.json.sheetTab }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.callDate }}",
+            "Client": "={{ $json.clientName }}",
+            "Summary": "={{ $json.summary }}",
+            "Next steps": "={{ ($json.actionItems||[]).map(a=>a.task).join('; ') }}",
+            "Owner": "={{ ($json.actionItems||[]).map(a=>a.owner).join('; ') }}",
+            "Action items": "={{ $json.actionCount }}",
+            "Coach note": "={{ $json.coachNote }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "72ee14079c",
+      "name": "5 \u00b7 Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1280,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_CRED_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.clientEmail }}",
+        "subject": "Recap + your next steps from {{ $json.senderName }}",
+        "emailType": "text",
+        "message": "={{ $json.clientEmailRecap }}",
+        "options": {}
+      },
+      "id": "149d074846",
+      "name": "6 \u00b7 Email client recap",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1540,
+        200
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_YOUR_GMAIL_CRED_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.yourEmail }}",
+        "subject": "Call debrief \u2014 {{ $json.clientName }} ({{ $json.callDate }})",
+        "emailType": "text",
+        "message": "=Call with {{ $json.clientName }} on {{ $json.callDate }}\n\nWhat happened:\n{{ $json.summary }}\n\nNext steps logged: {{ $json.actionCount }}\n\nHow to do better next time:\n{{ $json.coachNote }}\n\n(Full log in your Google Sheet.)",
+        "options": {}
+      },
+      "id": "450808ff41",
+      "name": "7 \u00b7 Email yourself the coach note",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1540,
+        400
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_YOUR_GMAIL_CRED_ID",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "1 \u00b7 Webhook \u2014 transcript in": {
+      "main": [
+        [
+          {
+            "node": "2 \u00b7 Setup \u2014 edit your business info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2 \u00b7 Setup \u2014 edit your business info": {
+      "main": [
+        [
+          {
+            "node": "3 \u00b7 AI Agent \u2014 structures the call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3 \u00b7 AI Agent \u2014 structures the call": {
+      "main": [
+        [
+          {
+            "node": "4 \u00b7 Parse agent JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4 \u00b7 Parse agent JSON": {
+      "main": [
+        [
+          {
+            "node": "5 \u00b7 Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "6 \u00b7 Email client recap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5 \u00b7 Log to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "7 \u00b7 Email yourself the coach note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6 \u00b7 Email client recap": {
+      "main": [
+        []
+      ]
+    },
+    "7 \u00b7 Email yourself the coach note": {
+      "main": [
+        []
+      ]
+    },
+    "Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "3 \u00b7 AI Agent \u2014 structures the call",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "3 \u00b7 AI Agent \u2014 structures the call",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
