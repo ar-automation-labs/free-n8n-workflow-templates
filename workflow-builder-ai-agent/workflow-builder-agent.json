@@ -1,0 +1,264 @@
+{
+  "name": "AI Workflow Builder Agent (chat to n8n workflow)",
+  "nodes": [
+    {
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        260,
+        240
+      ],
+      "webhookId": "4c5fbeef-0736-47cc-bb7c-3ae12a9f4183",
+      "parameters": {
+        "options": {},
+        "httpMethod": "POST"
+      },
+      "id": "8723630b-cb14-48f8-909e-817ee4a07523"
+    },
+    {
+      "name": "Fetch n8n Docs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        460
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://docs.google.com/document/d/1TiRusVo4DbbANwAr7I0GUGDZY3pmEmHZy3k66mRxLCg/export?format=txt",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "continueOnFail": true,
+      "id": "57246497-8f25-4dbe-93a3-a98ff7261ccb"
+    },
+    {
+      "name": "Workflow Builder Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        260,
+        720
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=User request: {{ $('When chat message received').item.json.chatInput }}\n\n## Current n8n node reference (may be empty)\n{{ $json.data }}",
+        "options": {
+          "systemMessage": "=You are an expert n8n automation engineer. Convert the user's natural-language request into a COMPLETE, IMPORTABLE n8n workflow.\\n\\nOUTPUT RULES (strict):\\n- Output ONLY the workflow JSON object. It MUST start with { and end with }.\\n- No markdown, no ```json fences, no commentary before or after.\\n- The JSON MUST include these top-level keys: \"name\", \"nodes\", \"connections\", \"settings\".\\n- \"settings\": {\"executionOrder\":\"v1\"}.\\n- Every node MUST have: parameters, name, type, typeVersion (use a CURRENT, real n8n node type), position ([x,y]), and a unique id (a UUID string).\\n- \"connections\" must wire every node's main output to the next node's main input. Start with an appropriate trigger (Webhook, Schedule, Form, Chat, etc.).\\n- Use descriptive node names and realistic parameter values. Avoid placeholders where a sensible value exists.\\n- Add colorful stickyNote nodes that explain each step and note any credentials the user must connect.\\n- Prefer common, stable nodes (Webhook, Set, Code, HTTP Request, Google Sheets, Gmail, Slack, Notion, Airtable, OpenAI/Anthropic LangChain nodes).\\n\\nThink step by step, then emit the final JSON object only."
+        }
+      },
+      "id": "7b224177-b939-49ec-a8d6-ed7a94f6b7ea"
+    },
+    {
+      "name": "OpenRouter GPT-4.1-mini",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        900
+      ],
+      "parameters": {
+        "model": "openai/gpt-4.1-mini",
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 8000
+        }
+      },
+      "credentials": {
+        "openRouterApi": {
+          "id": "REPLACE_WITH_OPENROUTER_CRED_ID",
+          "name": "OpenRouter account"
+        }
+      },
+      "id": "a3704738-c3d8-4482-9efa-6445f917d244"
+    },
+    {
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        620,
+        900
+      ],
+      "parameters": {
+        "options": {}
+      },
+      "id": "77f918eb-29f3-4244-a6af-be8d8c4cfb55"
+    },
+    {
+      "name": "Clean Workflow JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        980
+      ],
+      "parameters": {
+        "jsCode": "// Get the raw text the model produced (shape varies by n8n version)\nlet raw = $input.first().json;\nlet txt = raw.output ?? raw.text ?? raw.response ?? raw.message ?? '';\nif (Array.isArray(txt)) {\n  const ai = txt.find(m => m && m.type === 'ai');\n  txt = (ai && ai.text) ? ai.text : JSON.stringify(txt);\n}\ntxt = String(txt);\n\n// Strip markdown fences / any surrounding text, keep the outermost JSON object\nconst start = txt.indexOf('{');\nconst end = txt.lastIndexOf('}');\nif (start === -1 || end === -1) throw new Error('No JSON object found in model output: ' + txt.slice(0, 200));\nlet obj;\ntry {\n  obj = JSON.parse(txt.slice(start, end + 1));\n} catch (e) {\n  // one more attempt: balance common trailing-comma issues\n  let fixed = txt.slice(start, end + 1).replace(/,\\s*([}\\]])/g, '$1');\n  obj = JSON.parse(fixed);\n}\n\nobj.name = obj.name || 'AI-Built Workflow';\nobj.nodes = Array.isArray(obj.nodes) ? obj.nodes : [];\nobj.connections = obj.connections && typeof obj.connections === 'object' ? obj.connections : {};\nobj.settings = obj.settings || { executionOrder: 'v1' };\n// give nodes ids/positions if the model skipped them\nobj.nodes.forEach((n, i) => {\n  if (!n.id) n.id = crypto.randomUUID();\n  if (!n.position) n.position = [240 + (i % 4) * 220, 300 + Math.floor(i / 4) * 180];\n});\n\nreturn [{ json: { workflow: obj } }];\n"
+      },
+      "id": "77b4acdd-726d-4833-91dd-adfd8bd9bd62"
+    },
+    {
+      "name": "Create Workflow in n8n",
+      "type": "n8n-nodes-base.n8n",
+      "typeVersion": 1.1,
+      "position": [
+        260,
+        1240
+      ],
+      "parameters": {
+        "operation": "create",
+        "workflowObject": "={{ $json.workflow }}",
+        "options": {}
+      },
+      "credentials": {
+        "n8nApi": {
+          "id": "REPLACE_WITH_N8N_API_CRED_ID",
+          "name": "n8n account"
+        }
+      },
+      "id": "bb74a501-42be-4644-8e6c-6017dbdbd8f2"
+    },
+    {
+      "name": "Return Workflow Link",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        1500
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6519e07c-6951-4b1c-b74b-e0af658da25c",
+              "name": "text",
+              "type": "string",
+              "value": "=\u2705 Your workflow is built! Open it here:\\nhttps://YOUR-N8N-DOMAIN.app.n8n.cloud/workflow/{{ $json.id }}"
+            },
+            {
+              "id": "6e0b7466-c507-499e-9b04-ac266921ea40",
+              "name": "Workflow Link",
+              "type": "string",
+              "value": "=https://YOUR-N8N-DOMAIN.app.n8n.cloud/workflow/{{ $json.id }}"
+            },
+            {
+              "id": "c1d12949-9ce8-4542-9168-c731c028cc43",
+              "name": "Workflow Name",
+              "type": "string",
+              "value": "={{ $json.name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55da33f4-1a74-4790-afa8-9f1f8cc8ae15"
+    },
+    {
+      "name": "Setup Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -680,
+        200
+      ],
+      "parameters": {
+        "content": "## \u2699\ufe0f SETUP (3 steps)\n1. **OpenRouter** \u2192 connect your OpenRouter API key (powers the agent). Get a key at openrouter.ai\n2. **n8n API** \u2192 create an n8n API credential (Settings \u2192 n8n API) and connect it to 'Create Workflow in n8n'.\n3. **Set your domain** \u2192 in the 'Return Workflow Link' node, replace YOUR-N8N-DOMAIN with your real n8n URL.\n\nOptional: swap 'OpenRouter GPT-4.1-mini' for Claude/GPT-4o for more complex builds.\nThen open the Chat panel and type a request like: \"when a Typeform is submitted, add to Google Sheets and post to Slack\".",
+        "height": 460,
+        "width": 620,
+        "color": 4
+      },
+      "id": "d8be44bb-62e2-4dc6-90f4-e13e1551593d"
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Fetch n8n Docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch n8n Docs": {
+      "main": [
+        [
+          {
+            "node": "Workflow Builder Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter GPT-4.1-mini": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Workflow Builder Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Workflow Builder Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Builder Agent": {
+      "main": [
+        [
+          {
+            "node": "Clean Workflow JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Workflow JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Workflow in n8n",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Workflow in n8n": {
+      "main": [
+        [
+          {
+            "node": "Return Workflow Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
