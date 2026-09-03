@@ -1,0 +1,585 @@
+{
+  "name": "Post Once to Everywhere (Blotato x9)",
+  "nodes": [
+    {
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        40,
+        -160
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "a91a5d4c-dfbd-4eab-b1d9-bf6980fb5378"
+    },
+    {
+      "name": "Get Next Ready Post",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        280,
+        -160
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Status",
+              "lookupValue": "Ready To Post"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "id": "4935d129-dc6a-474c-be29-c09e6b4aed1e"
+    },
+    {
+      "name": "Extract Drive ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        40
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cda11aee-f17f-45a8-83bb-43e8b94334f2",
+              "name": "mediaID",
+              "type": "string",
+              "value": "={{ $json['Media URL'].match(/\\/d\\/([a-zA-Z0-9-_]+)/)?.[1] || $json['Media URL'] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9db028e4-3658-4b8b-a49d-e4a9932d8b95"
+    },
+    {
+      "name": "Upload Media to Blotato",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        520,
+        40
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "REPLACE_WITH_BLOTATO_CRED_ID",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "resource": "media",
+        "mediaUrl": "=https://drive.google.com/uc?export=download&id={{ $('Get Next Ready Post').item.json.mediaID }}"
+      },
+      "id": "dbc1e58b-175a-4c45-823a-2c4bbb6f8759"
+    },
+    {
+      "name": "Instagram",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        780,
+        -300
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "REPLACE_WITH_BLOTATO_CRED_ID",
+          "name": "Blotato account"
+        }
+      },
+      "parameters": {
+        "postContentText": "={{ $('Get Next Ready Post').item.json.Title }}\\n\\n{{ $('Get Next Ready Post').item.json.Caption }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {}
+      },
+      "id": "61a1a727-564a-489a-8c43-c5b2776187e9"
+    },
+    {
+      "name": "TikTok",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        780,
+        -160
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "REPLACE_WITH_BLOTATO_CRED_ID",
+          "name": "Blotato account"
+        }
+      },
+      "parameters": {
+        "postContentText": "={{ $('Get Next Ready Post').item.json.Title }}\\n\\n{{ $('Get Next Ready Post').item.json.Caption }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {},
+        "platform": "tiktok",
+        "postCreateTiktokOptionIsAiGenerated": true
+      },
+      "id": "7f607a62-0042-4ff1-8de8-0b6cf68a8127"
+    },
+    {
+      "name": "YouTube",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        780,
+        -20
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "REPLACE_WITH_BLOTATO_CRED_ID",
+          "name": "Blotato account"
+        }
+      },
+      "parameters": {
+        "postContentText": "={{ $('Get Next Ready Post').item.json.Caption }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {},
+        "platform": "youtube",
+        "postCreateYoutubeOptionTitle": "={{ $('Get Next Ready Post').item.json.Title }}",
+        "postCreateYoutubeOptionShouldNotifySubscribers": false
+      },
+      "id": "46b0e81e-e435-45af-8e98-564b21d23b1b"
+    },
+    {
+      "name": "Facebook",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        780,
+        120
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "REPLACE_WITH_BLOTATO_CRED_ID",
+          "name": "Blotato account"
+        }
+      },
+      "parameters": {
+        "postContentText": "={{ $('Get Next Ready Post').item.json.Title }}\\n\\n{{ $('Get Next Ready Post').item.json.Caption }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {},
+        "platform": "facebook",
+        "facebookPageId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "REPLACE_WITH_FACEBOOK_PAGE_ID"
+        }
+      },
+      "id": "071ad606-24bf-406c-843e-ebf0d4d859df"
+    },
+    {
+      "name": "LinkedIn",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -300
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "REPLACE_WITH_BLOTATO_CRED_ID",
+          "name": "Blotato account"
+        }
+      },
+      "parameters": {
+        "postContentText": "={{ $('Get Next Ready Post').item.json.Title }}\\n\\n{{ $('Get Next Ready Post').item.json.Caption }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {},
+        "platform": "linkedin"
+      },
+      "id": "fead3ffd-db26-4f51-8928-78e6d0c67535"
+    },
+    {
+      "name": "X (Twitter)",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -160
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "REPLACE_WITH_BLOTATO_CRED_ID",
+          "name": "Blotato account"
+        }
+      },
+      "parameters": {
+        "postContentText": "={{ $('Get Next Ready Post').item.json.Title }}\\n\\n{{ $('Get Next Ready Post').item.json.Caption }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {},
+        "platform": "twitter"
+      },
+      "id": "ab76dd88-ae76-4643-9d79-7977c7a9aeab"
+    },
+    {
+      "name": "Threads",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -20
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "REPLACE_WITH_BLOTATO_CRED_ID",
+          "name": "Blotato account"
+        }
+      },
+      "parameters": {
+        "postContentText": "={{ $('Get Next Ready Post').item.json.Title }}\\n\\n{{ $('Get Next Ready Post').item.json.Caption }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {},
+        "platform": "threads"
+      },
+      "id": "ef38ae8e-7d18-42d0-817c-1910d63d038b"
+    },
+    {
+      "name": "Pinterest",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        120
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "REPLACE_WITH_BLOTATO_CRED_ID",
+          "name": "Blotato account"
+        }
+      },
+      "parameters": {
+        "postContentText": "={{ $('Get Next Ready Post').item.json.Title }}\\n\\n{{ $('Get Next Ready Post').item.json.Caption }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {},
+        "platform": "pinterest",
+        "pinterestBoardId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_PINTEREST_BOARD_ID"
+        }
+      },
+      "id": "1e255db2-fddd-45bd-96b6-3ecb3f8dabeb"
+    },
+    {
+      "name": "Bluesky",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        260
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "REPLACE_WITH_BLOTATO_CRED_ID",
+          "name": "Blotato account"
+        }
+      },
+      "parameters": {
+        "postContentText": "={{ $('Get Next Ready Post').item.json.Title }}\\n\\n{{ $('Get Next Ready Post').item.json.Caption }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {},
+        "platform": "bluesky",
+        "accountId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        }
+      },
+      "id": "3aa9b19f-6009-4b45-944a-cb169648bd17"
+    },
+    {
+      "name": "Mark Posted",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        1300,
+        -160
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Title": "={{ $('Get Next Ready Post').item.json.Title }}",
+            "Status": "Posted"
+          },
+          "matchingColumns": [
+            "Title"
+          ],
+          "schema": [
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "display": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "display": true
+            },
+            {
+              "id": "Media URL",
+              "displayName": "Media URL",
+              "type": "string",
+              "display": true,
+              "removed": true
+            },
+            {
+              "id": "Caption",
+              "displayName": "Caption",
+              "type": "string",
+              "display": true,
+              "removed": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e92d3cba-760d-4dfd-9059-dabac5821857"
+    },
+    {
+      "name": "Mark Errored",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        780,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Title": "={{ $('Get Next Ready Post').item.json.Title }}",
+            "Status": "Errored"
+          },
+          "matchingColumns": [
+            "Title"
+          ],
+          "schema": [
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "display": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "display": true
+            },
+            {
+              "id": "Media URL",
+              "displayName": "Media URL",
+              "type": "string",
+              "display": true,
+              "removed": true
+            },
+            {
+              "id": "Caption",
+              "displayName": "Caption",
+              "type": "string",
+              "display": true,
+              "removed": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7ac1894b-8a71-429a-b14c-a2b68b2a7adf"
+    },
+    {
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -360
+      ],
+      "parameters": {
+        "content": "## Post-Once-Everywhere (n8n + Blotato)\n**1.** Make a copy of the free Google Sheet template (link in README). Put each video: Title, Media URL (Google Drive link), Caption, Status = `Ready To Post`.\n**2.** Connect a **Google Sheets** credential (OAuth) on the two Google Sheets nodes, and paste your sheet ID.\n**3.** Create a free [Blotato](https://blotato.com) account, copy your **API key**, and add it as the Blotato credential on every Blotato node. Connect your social accounts inside Blotato.\n**4.** Set your Facebook Page ID / Pinterest Board ID where shown (other platforms auto-use your connected accounts).\n**5.** Activate. Every 15 min it finds a 'Ready To Post' row, uploads the video, posts to all 9 platforms, and flips Status to Posted (or Errored).\nNote: the n8n workflow and sheet are free; Blotato posting uses its 7-day free trial then a paid plan (it handles the platform APIs/app reviews for you).",
+        "height": 560,
+        "width": 520,
+        "color": 4
+      },
+      "id": "1f3ac82b-ee6f-4ac7-ba24-9c1128abcdb9"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Next Ready Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Next Ready Post": {
+      "main": [
+        [
+          {
+            "node": "Extract Drive ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Drive ID": {
+      "main": [
+        [
+          {
+            "node": "Upload Media to Blotato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Media to Blotato": {
+      "main": [
+        [
+          {
+            "node": "Instagram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "TikTok",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "YouTube",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Facebook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "LinkedIn",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "X (Twitter)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Threads",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pinterest",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Bluesky",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mark Posted",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Errored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
