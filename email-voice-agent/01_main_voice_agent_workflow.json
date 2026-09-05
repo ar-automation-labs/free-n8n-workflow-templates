@@ -1,0 +1,232 @@
+{
+  "name": "Voice Email Agent \u2013 MAIN (webhook \u2192 agent \u2192 gmail tool)",
+  "nodes": [
+    {
+      "id": "f1f6c724-17b1-41e6-98cf-179f01859385",
+      "name": "Webhook \u2013 Voice Agent",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        0
+      ],
+      "webhookId": "voice-email-agent-0001",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "voice-email-agent",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "aa8a6481-0d3e-4192-9e53-732eb46f09e3",
+      "name": "Set \u2013 Voice Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -420,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "60e647b9-6027-4b6c-a12e-b0c564c7da69",
+              "name": "query",
+              "value": "={{ $json.body.query ?? $json.body.transcript ?? $json.body.text ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "c0c11b82-1010-4be6-85ce-7330b6dbe528",
+              "name": "caller_id",
+              "value": "={{ $json.body.caller_id ?? 'unknown-caller' }}",
+              "type": "string"
+            },
+            {
+              "id": "51a40a7c-079c-4f36-9bc2-daa5ffcad080",
+              "name": "conversation_id",
+              "value": "={{ $json.body.conversation_id ?? $execution.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d79772d2-5b31-4331-8602-7d3b994a2fe8",
+      "name": "Voice Brain \u2013 AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -140,
+        0
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.query }}",
+        "hasOutputParser": false,
+        "options": {
+          "systemMessage": "You are the voice personal email agent of Ali (channel: AutomateWithAli) \u2014 a spoken inbox assistant. The caller talks to you; you answer out loud, so keep every reply under 3 sentences, plain words, no markdown, no links.\n\nWHO YOU ARE: Ali's personal voice agent for his Gmail. You can read and summarize his inbox, send emails, draft emails, reply, and label messages \u2014 all by voice.\n\nHOW YOU WORK:\n1. For ANY request about email (read, summarize, send, draft, reply, label, search, \"what's new\", \"tell Sarah\u2026\"), call the tool \"gmail_subagent\" exactly once, passing a CLEAN, complete, unambiguous instruction rewritten by you (include names, emails if known, intent, and tone). Never forward raw rambling speech.\n2. When the tool returns, speak the result naturally and briefly. If the tool says an email was sent or drafted, confirm in one line.\n3. If the request is NOT about email, answer politely in one line that you only handle Ali's inbox, and suggest an email task.\n4. Never invent senders, subjects or counts. Only report what the tool returned. If the tool fails, say the inbox is unreachable right now and suggest trying again.\n5. Destructive actions (delete/trash) require the caller to say \"confirm\" first; otherwise draft instead of send.",
+          "maxIterations": 6
+        }
+      }
+    },
+    {
+      "id": "4913fc4f-3655-4ab1-8923-e3ba0742016d",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -220,
+        260
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.4
+        }
+      }
+    },
+    {
+      "id": "60e7ebea-9d91-49db-9405-d6e8f5d4401d",
+      "name": "Conversation Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        20,
+        260
+      ],
+      "parameters": {
+        "windowSize": 10,
+        "sessionIdType": "custom",
+        "sessionKey": "={{ $json.conversation_id }}"
+      }
+    },
+    {
+      "id": "93d50ef4-9adb-4909-9279-915e0d1d5033",
+      "name": "Gmail Sub-Agent (Tool)",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        260,
+        260
+      ],
+      "parameters": {
+        "description": "Hand the caller's email request to the Gmail sub-agent. Input: one clean, complete instruction (search/read/summarize/send/draft/reply/label). Returns a short spoken-ready result.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_GMAIL_SUBWORKFLOW_ID"
+        },
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query",
+              "value": "={{ $fromAI('query','The complete clean email instruction for the Gmail sub-agent','string') }}"
+            },
+            {
+              "name": "caller_id",
+              "value": "={{ $('Set \u2013 Voice Input').item.json.caller_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "90eff0a4-144b-4a2c-bcb8-3a54f59bb22f",
+      "name": "Respond \u2013 Voice Reply",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        180,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: $json.output, conversation_id: $('Set \u2013 Voice Input').item.json.conversation_id, status: 'ok' }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook \u2013 Voice Agent": {
+      "main": [
+        [
+          {
+            "node": "Set \u2013 Voice Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set \u2013 Voice Input": {
+      "main": [
+        [
+          {
+            "node": "Voice Brain \u2013 AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice Brain \u2013 AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond \u2013 Voice Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Voice Brain \u2013 AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversation Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Voice Brain \u2013 AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Sub-Agent (Tool)": {
+      "ai_tool": [
+        [
+          {
+            "node": "Voice Brain \u2013 AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": [],
+  "active": false,
+  "meta": {}
+}

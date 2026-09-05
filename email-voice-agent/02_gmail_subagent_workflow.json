@@ -1,0 +1,307 @@
+{
+  "name": "Gmail Sub-Agent (called by main)",
+  "nodes": [
+    {
+      "id": "7e3ec37c-8804-4a38-954a-6dea323a4c9e",
+      "name": "When Executed by Main Agent",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -640,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query",
+              "type": "string"
+            },
+            {
+              "name": "caller_id",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "e92ed99f-a458-4bd4-bdb3-9f19addf6021",
+      "name": "Gmail Sub-Agent \u2013 AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -140,
+        0
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.query }}",
+        "hasOutputParser": false,
+        "options": {
+          "systemMessage": "You are the Gmail execution sub-agent. You receive ONE clean instruction from the voice agent and carry it out in Gmail, then return a short factual result (what you found/did, with names, subjects, counts).\n\nRULES:\n- Search before you act: use the search tool with proper Gmail query syntax (from:, to:, is:unread, newer_than:, subject:).\n- To SEND, you need recipient, subject, body. If the instruction lacks a recipient email address, return \"missing recipient\" instead of guessing.\n- Prefer creating a DRAFT over sending when the instruction says \"draft\".\n- Sign sent mail naturally as Ali. Keep bodies professional and concise.\n- Reply in 1-4 sentences of plain text summarizing the outcome (this will be spoken aloud by the voice agent).",
+          "maxIterations": 8
+        }
+      }
+    },
+    {
+      "id": "bc83c2f8-99f0-4b94-bfd5-f3b6bde8c8a3",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -340,
+        280
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.2
+        }
+      }
+    },
+    {
+      "id": "ec6752c2-a0e9-4db0-99ed-0e0dca358934",
+      "name": "Gmail \u2013 Search Inbox",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -340,
+        -260
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 5,
+        "filters": {
+          "q": "={{ $fromAI('search_query','Gmail search syntax e.g. is:unread from:alice@company.com; empty string for most recent','string','') }}"
+        },
+        "descriptionType": "manual",
+        "toolDescription": "Search/read messages in the inbox. Returns subjects, senders, snippets, ids."
+      }
+    },
+    {
+      "id": "314acf2c-1fcf-4a6a-94a3-1aff1d3cdd24",
+      "name": "Gmail \u2013 Read Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -120,
+        -260
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "get",
+        "messageId": "={{ $fromAI('message_id','the gmail message id to open','string') }}",
+        "descriptionType": "manual",
+        "toolDescription": "Read one full message by its id."
+      }
+    },
+    {
+      "id": "ab48f250-d03a-47de-bf4f-c8b3e2e35033",
+      "name": "Gmail \u2013 Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        100,
+        -260
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $fromAI('to_email','recipient email address','string') }}",
+        "subject": "={{ $fromAI('subject','email subject line','string') }}",
+        "message": "={{ $fromAI('email_body','professional concise email body','string') }}",
+        "descriptionType": "manual",
+        "toolDescription": "Send an email now. Needs recipient, subject, body."
+      }
+    },
+    {
+      "id": "986a431d-455f-4eb1-9158-6b2852da63ef",
+      "name": "Gmail \u2013 Reply To Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        320,
+        -260
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "reply",
+        "messageId": "={{ $fromAI('message_id','id of message being replied to','string') }}",
+        "message": "={{ $fromAI('reply_body','professional concise reply body','string') }}",
+        "descriptionType": "manual",
+        "toolDescription": "Reply to an existing message thread by its id."
+      }
+    },
+    {
+      "id": "708b41f2-b6fb-4ef8-9795-c7e21431a1f1",
+      "name": "Gmail \u2013 Create Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        540,
+        -260
+      ],
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "sendTo": "={{ $fromAI('to_email','recipient email address','string') }}",
+        "subject": "={{ $fromAI('subject','email subject line','string') }}",
+        "message": "={{ $fromAI('email_body','professional concise email body','string') }}",
+        "descriptionType": "manual",
+        "toolDescription": "Save a draft instead of sending (use when not explicitly told to send)."
+      }
+    },
+    {
+      "id": "4d0d0b17-5dcc-4932-bc62-1bbd202d4638",
+      "name": "Gmail \u2013 List Labels",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        540,
+        280
+      ],
+      "parameters": {
+        "resource": "label",
+        "operation": "getAll",
+        "returnAll": true,
+        "descriptionType": "manual",
+        "toolDescription": "List all gmail labels with ids."
+      }
+    },
+    {
+      "id": "e50248e7-37b3-4720-a212-aeaf2fade67a",
+      "name": "Gmail \u2013 Add Label",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        320,
+        280
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "addLabels",
+        "messageId": "={{ $fromAI('message_id','id of message to label','string') }}",
+        "labelIds": "={{ $fromAI('label_ids','array of label ids to attach','json') }}",
+        "descriptionType": "manual",
+        "toolDescription": "Attach labels to a message (get label ids first with List Labels)."
+      }
+    }
+  ],
+  "connections": {
+    "When Executed by Main Agent": {
+      "main": [
+        [
+          {
+            "node": "Gmail Sub-Agent \u2013 AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail \u2013 Search Inbox": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail Sub-Agent \u2013 AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail \u2013 Read Email": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail Sub-Agent \u2013 AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail \u2013 Send Email": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail Sub-Agent \u2013 AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail \u2013 Reply To Email": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail Sub-Agent \u2013 AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail \u2013 Create Draft": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail Sub-Agent \u2013 AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail \u2013 List Labels": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail Sub-Agent \u2013 AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail \u2013 Add Label": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail Sub-Agent \u2013 AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gmail Sub-Agent \u2013 AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": [],
+  "active": false,
+  "meta": {}
+}
