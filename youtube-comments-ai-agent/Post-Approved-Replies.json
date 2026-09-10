@@ -1,0 +1,269 @@
+{
+  "name": "Post Approved Replies",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "950f8794-92c1-452a-99fb-d69f82885815",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Approvals",
+          "mode": "list"
+        },
+        "options": {
+          "returnAllMatches": true
+        }
+      },
+      "id": "a1858188-57b9-4e3a-887c-2ada899861e0",
+      "name": "Read Approvals",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        0,
+        160
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": null,
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst items = $input.all();\nconst out = [];\nfor (const it of items) {\n  const status = String(it.json.status || '').toUpperCase().trim();\n  const reply = String(it.json.reply || '').trim();\n  const commentId = String(it.json.commentId || '').trim();\n  if (status === 'APPROVED' && reply && commentId) {\n    out.push({ json: { commentId, reply, author: it.json.author, comment: it.json.comment } });\n  }\n}\nreturn out;\n"
+      },
+      "id": "cbf766c7-d7db-4db9-a18f-0952f01a6dfe",
+      "name": "Filter APPROVED",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-ap",
+              "leftValue": "={{ $items().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "20e25e7b-7610-4a22-a0f9-8bd83908937a",
+      "name": "Any Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/youtube/v3/comments?part=snippet",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{\"snippet\":{\"parentId\":{{ JSON.stringify($json.commentId) }},\"textOriginal\":{{ JSON.stringify($json.reply) }}}}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api"
+      },
+      "id": "bc1b66fa-e4e7-40e7-a3e1-35f33bfa19ac",
+      "name": "Post Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        640
+      ],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": null,
+          "name": "YouTube account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Approvals",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "commentId": "={{ $json.commentId }}",
+            "status": "POSTED"
+          },
+          "matchingColumns": [
+            "commentId"
+          ],
+          "schema": []
+        },
+        "columnToMatchOn": "commentId",
+        "options": {}
+      },
+      "id": "cfa3e7fe-3d63-4b3d-8d94-b58398e63c78",
+      "name": "Mark POSTED",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        0,
+        800
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": null,
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "7df4a94a-01f8-44d2-8a27-f56c0eb34fc2",
+      "name": "Nothing to post",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        400,
+        640
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Approvals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Approvals": {
+      "main": [
+        [
+          {
+            "node": "Filter APPROVED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter APPROVED": {
+      "main": [
+        [
+          {
+            "node": "Any Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Approved?": {
+      "main": [
+        [
+          {
+            "node": "Post Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nothing to post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Reply": {
+      "main": [
+        [
+          {
+            "node": "Mark POSTED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark POSTED": {
+      "main": [
+        []
+      ]
+    },
+    "Nothing to post": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

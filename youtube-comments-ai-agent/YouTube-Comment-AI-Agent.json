@@ -1,0 +1,557 @@
+{
+  "name": "YouTube Comment AI Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "323d5c72-b482-49ca-ae6e-71a861d0da0b",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst WORKFLOW_LINK = \"https://github.com/ar-automation-labs/YouTube-AI-Agent\";\n\nconst SYSTEM_PROMPT = \"You are ARIA, the comment assistant for the YouTube channel @AutomateWithAli, run by Ali Raza of AR Automation Labs (Faisalabad, Pakistan). The channel posts short videos about building AI agents and n8n automations that help solo creators and small businesses get clients and save time.\\n\\nYour job: read ONE YouTube comment and decide how Ali should respond, in Ali's voice.\\n\\nALI'S VOICE:\\n- Short sentences. Plain, warm English. First person.\\n- No salesy language, no fake urgency, no emoji spam (max one, rarely).\\n- Answer the ACTUAL question the person asked. Never invent facts, prices or promises.\\n- Keep replies casual and helpful, like a creator talking to a viewer.\\n\\nRULES - pick exactly ONE action:\\n1. REPLY - a genuine question, praise, or a request like 'how do I get this / build / template / workflow / link'. Draft a short, helpful reply. If they ask how to get it, include this link: WORKFLOW_LINK_PLACEHOLDER\\n2. FLAG - negative comments, complaints, business leads asking about pricing or hiring Ali, or anything you are unsure about. Provide a draft reply only if it is clearly safe.\\n3. SKIP - spam, self-promotion, hate, dropped links, off-topic bot content, or empty comments. Never reply to these.\\n\\nOUTPUT: valid JSON only, exactly this shape:\\n{\\\"action\\\":\\\"REPLY\\\",\\\"reply\\\":\\\"...\\\"}\\n(reply may be an empty string for FLAG and SKIP).\";\n\nreturn [{ json: {\n  // ====== EDIT THESE ======\n  CHANNEL_ID: \"UCoKHIVHitBuBu5m0M_Ykdsw\",   // your YouTube channel ID\n  MY_CHANNEL_ID: \"UCoKHIVHitBuBu5m0M_Ykdsw\", // used to skip your own comments\n  MODE: \"auto\",            // \"auto\" = post safe replies, flag risky ones. \"approve\" = draft everything, never auto-post.\n  LOOKBACK_HOURS: 12,      // only process comments newer than this (hours)\n  GEMINI_MODEL: \"gemini-2.5-flash\", // swap to any Gemini model you have access to\n  // ========================\n  SYSTEM_PROMPT\n}}];\n"
+      },
+      "id": "98b5c337-332f-4a0c-847a-75462bf537ce",
+      "name": "Business Setup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&allThreadsRelatedToChannelId={{ $('Business Setup').item.json.CHANNEL_ID }}&maxResults=100&order=time",
+        "sendQuery": false,
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api"
+      },
+      "id": "b072f40c-03f0-409b-9fcd-d485cebe5320",
+      "name": "Get New Comments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        320
+      ],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": null,
+          "name": "YouTube account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst cfg = $('Business Setup').item.json;\nconst resp = $input.first().json;\nconst items = resp.items || [];\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.processed) staticData.processed = {};\n\nconst cutoff = Date.now() - (cfg.LOOKBACK_HOURS * 3600 * 1000);\nconst out = [];\n\nfor (const th of items) {\n  const top = th.snippet && th.snippet.topLevelComment;\n  if (!top) continue;\n  const id = top.id;\n  const text = (top.snippet.textDisplay || '').trim();\n  const authorName = top.snippet.authorDisplayName || 'viewer';\n  const authorChannelId = (top.snippet.authorChannelId && top.snippet.authorChannelId.value) || '';\n  const publishedAt = new Date(top.snippet.publishedAt || 0).getTime();\n  const videoId = (th.snippet && th.snippet.videoId) || '';\n\n  if (!text) continue;                                     // empty comment\n  if (authorChannelId && authorChannelId === cfg.MY_CHANNEL_ID) continue;  // my own comment\n  if (publishedAt < cutoff) continue;                      // outside lookback window\n  if (staticData.processed[id]) continue;                  // already handled in a past run\n\n  out.push({ json: {\n    commentId: id,\n    commentText: text,\n    authorName: authorName,\n    videoId: videoId,\n    prompt: 'COMMENT by ' + authorName + ':\\n' + text,\n  }});\n}\nreturn out;\n"
+      },
+      "id": "bf95ea06-1f95-44f7-9586-317feed721b6",
+      "name": "Normalize & Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-any",
+              "leftValue": "={{ $items().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "103e5295-c9e1-4c39-a3fe-67d859dbc342",
+      "name": "Any New Comments?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/{{ $('Business Setup').item.json.GEMINI_MODEL }}:generateContent",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{\"systemInstruction\":{\"parts\":[{\"text\":{{ JSON.stringify($('Business Setup').item.json.SYSTEM_PROMPT) }}}]},\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":{{ JSON.stringify($json.prompt) }}}]}],\"generationConfig\":{\"temperature\":0.7,\"responseMimeType\":\"application/json\"}}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "1becd19d-b5dd-49b4-8e0b-14e9605f2daf",
+      "name": "AI Agent (ARIA)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        800
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": null,
+          "name": "Gemini API key (x-goog-api-key)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst cfg = $('Business Setup').item.json;\nconst originals = $('Normalize & Filter').all();\nconst items = $input.all();\n\nreturn items.map((item, i) => {\n  const orig = originals[i] ? originals[i].json : (item.json.commentId ? item.json : {});\n  let action = 'SKIP', reply = '', reason = '';\n  try {\n    const raw = (item.json.candidates && item.json.candidates[0]\n      && item.json.candidates[0].content && item.json.candidates[0].content.parts\n      && item.json.candidates[0].content.parts[0].text) || '';\n    const clean = raw.replace(/^```json\\s*/i, '').replace(/```$/,'').trim();\n    const obj = JSON.parse(clean);\n    action = String(obj.action || 'SKIP').toUpperCase();\n    reply = String(obj.reply || '').trim();\n    reason = String(obj.reason || '').trim();\n  } catch (e) {\n    // safety: never auto-reply when we cannot read the AI's decision\n    action = 'FLAG';\n    reason = 'unparseable AI response: ' + e.message;\n  }\n  if (cfg.MODE === 'approve') action = 'FLAG';   // draft-only mode\n  if (action === 'REPLY' && !reply) action = 'SKIP';\n  return { json: {\n    commentId: orig.commentId,\n    commentText: orig.commentText,\n    authorName: orig.authorName,\n    videoId: orig.videoId,\n    action: action,\n    reply: reply,\n    reason: reason,\n  }};\n});\n"
+      },
+      "id": "6abea935-e73b-4611-b792-d3e38b1d120a",
+      "name": "Parse AI Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "action",
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "sw-reply",
+              "leftValue": "",
+              "rightValue": "REPLY",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "sw-flag",
+              "leftValue": "",
+              "rightValue": "FLAG",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "a936171e-4680-4f20-a931-b385b779f69e",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        0,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/youtube/v3/comments?part=snippet",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{\"snippet\":{\"parentId\":{{ JSON.stringify($json.commentId) }},\"textOriginal\":{{ JSON.stringify($json.reply) }}}}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api"
+      },
+      "id": "8471337c-ab86-4674-9192-e9fbcf256a8a",
+      "name": "Post Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        1280
+      ],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": null,
+          "name": "YouTube account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Log",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISOString() }}",
+            "author": "={{ $json.authorName }}",
+            "comment": "={{ $json.commentText }}",
+            "reply": "={{ $json.reply }}",
+            "status": "replied",
+            "commentId": "={{ $json.commentId }}",
+            "videoId": "={{ $json.videoId }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "42ebfe92-9e95-4568-afc1-c449fef3d23c",
+      "name": "Log (Replied)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        1440
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": null,
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Approvals",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISOString() }}",
+            "author": "={{ $json.authorName }}",
+            "comment": "={{ $json.commentText }}",
+            "reply": "={{ $json.reply }}",
+            "status": "NEW",
+            "commentId": "={{ $json.commentId }}",
+            "videoId": "={{ $json.videoId }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "151bdc43-e6f4-430f-9cbc-57b822a69166",
+      "name": "Log to Approvals",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        0,
+        1280
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": null,
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Log",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISOString() }}",
+            "author": "={{ $json.authorName }}",
+            "comment": "={{ $json.commentText }}",
+            "reply": "={{ $json.reason }}",
+            "status": "skipped",
+            "commentId": "={{ $json.commentId }}",
+            "videoId": "={{ $json.videoId }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "58a99518-e7c5-43bd-9476-2c89b4e047a3",
+      "name": "Log (Skipped)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -400,
+        1280
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": null,
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst items = $input.all();\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.processed) staticData.processed = {};\nconst now = Date.now();\nfor (const it of items) {\n  const id = it.json.commentId;\n  if (id) staticData.processed[id] = now;\n}\n// keep the dedup map bounded\nconst keys = Object.keys(staticData.processed);\nif (keys.length > 2000) {\n  keys.sort((a, b) => staticData.processed[a] - staticData.processed[b]);\n  for (const k of keys.slice(0, keys.length - 2000)) delete staticData.processed[k];\n}\nreturn items;\n"
+      },
+      "id": "85e6c5b3-679a-42b4-9470-4999e4f5ad81",
+      "name": "Mark Processed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1440
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "7911ae33-283c-44bd-bd05-dfa05fe4e37e",
+      "name": "No new comments",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        400,
+        800
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Business Setup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Setup": {
+      "main": [
+        [
+          {
+            "node": "Get New Comments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Comments": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize & Filter": {
+      "main": [
+        [
+          {
+            "node": "Any New Comments?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any New Comments?": {
+      "main": [
+        [
+          {
+            "node": "AI Agent (ARIA)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No new comments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent (ARIA)": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Reply": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Post Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log to Approvals",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log (Skipped)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Reply": {
+      "main": [
+        [
+          {
+            "node": "Log (Replied)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log (Replied)": {
+      "main": [
+        [
+          {
+            "node": "Mark Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Approvals": {
+      "main": [
+        [
+          {
+            "node": "Mark Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log (Skipped)": {
+      "main": [
+        [
+          {
+            "node": "Mark Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Processed": {
+      "main": [
+        []
+      ]
+    },
+    "No new comments": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
